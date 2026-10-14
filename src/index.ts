@@ -938,7 +938,7 @@ app.get('/', async (c) => {
     if (c.env.WIKI_HOME_PAGE) {
         return c.redirect(`/w/${encodeURIComponent(c.env.WIKI_HOME_PAGE)}`);
     }
-    return renderHtml(c, '/');
+    return renderHtml(c, '/', { _ssrHome: true, _ssrDescription: '아이와 함께 자라는 우리의 지식. 부모들의 경험과 육아 지식을 함께 찾아보세요.' });
 });
 
 // /search 접근 시 search.html 서빙 (SSR 브랜딩 적용)

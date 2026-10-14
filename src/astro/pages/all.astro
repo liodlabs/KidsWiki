@@ -21,11 +21,14 @@ import Footer from '../components/Footer.astro';
 
     <!-- ── 메인 레이아웃 ── -->
     <div class="wiki-layout">
-        <div class="wiki-container">
+        <div class="wiki-container" id="main-content" tabindex="-1" role="main">
             <div class="wiki-article all-page" style="width: 100%; max-width: 100%; overflow-x: hidden;">
 
-                <h1 class="h3 mb-1"><i class="bi bi-grid-3x3-gap text-primary"></i> 모든 문서</h1>
-                <p class="text-muted small mb-4">문서·카테고리·이미지를 초성별로 묶어 한눈에 살펴봅니다. 제목 옆 화살표로 하위 문서를 펼칠 수 있습니다.</p>
+                <header class="page-intro">
+                    <p class="home-eyebrow">차곡차곡 쌓인 우리의 지식</p>
+                    <h1>모든 문서</h1>
+                    <p>문서와 카테고리, 이미지를 한곳에서. 제목 옆 화살표를 누르면 이어지는 이야기도 볼 수 있어요.</p>
+                </header>
 
                 <!-- 상위 탭: 문서 / 카테고리 / 이미지 -->
                 <ul class="nav nav-tabs mb-3" role="tablist">

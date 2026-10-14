@@ -120,6 +120,16 @@ export function applyPageSSR(response: Response, pageData: Record<string, any>, 
                 }
             }
         })
+        .on('#homePage', {
+            element(element) {
+                if (pageData._ssrHome) element.removeAttribute('class');
+            }
+        })
+        .on('#loading', {
+            element(element) {
+                if (pageData._ssrHome) element.setAttribute('class', 'wiki-loading d-none');
+            }
+        })
         .on('#wiki-favicon', {
             element(element) {
                 if (wikiFaviconUrl) {
@@ -178,6 +188,7 @@ export function applyPageSSR(response: Response, pageData: Record<string, any>, 
             element(element) {
                 // 레이아웃 모드(default | left-toc) 를 body data-attr 로 표시해 CSS 가 페인트 전에 분기.
                 element.setAttribute('data-layout-mode', layoutMode);
+                if (pageData._ssrHome) element.setAttribute('class', 'home-view');
                 // CDN 스크립트(bootstrap JS, swal, marked 등) 주입 후 커스텀 헤더 추가
                 if (bodyScripts) element.append(bodyScripts, { html: true });
                 if (customHeader) {

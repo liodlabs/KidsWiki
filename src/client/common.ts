@@ -1939,3 +1939,14 @@ window.getRelativeTime = getRelativeTime;
 window.loadRecentChanges = loadRecentChanges;
 window.loadTrending = loadTrending;
 window.initTrendingTicker = initTrendingTicker;
+
+// Shared navigation state and keyboard entry point for every page shell.
+const mainContent = document.querySelector('.wiki-container');
+if (mainContent) {
+    mainContent.id = 'main-content';
+    mainContent.setAttribute('tabindex', '-1');
+    mainContent.setAttribute('role', 'main');
+}
+for (const link of document.querySelectorAll('.wiki-primary-nav a')) {
+    if (new URL(link.href).pathname === window.location.pathname) link.setAttribute('aria-current', 'page');
+}
