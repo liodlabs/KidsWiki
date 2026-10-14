@@ -18,10 +18,14 @@ import Footer from '../components/Footer.astro';
 
     <!-- ── 메인 레이아웃 ── -->
     <div class="wiki-layout">
-        <div class="wiki-container">
+        <div class="wiki-container" id="main-content" tabindex="-1" role="main">
             <div class="wiki-article" style="width: 100%; max-width: 100%; overflow-x: hidden;">
 
-                <h1 class="h3 mb-1"><i class="bi bi-compass text-primary"></i> 탐색</h1>
+                <header class="page-intro">
+                    <p class="home-eyebrow">함께 만들어 가는 지식</p>
+                    <h1>위키 둘러보기</h1>
+                    <p>새로운 문서를 발견하고, 아직 비어 있는 이야기를 함께 채워 보세요.</p>
+                </header>
 
                 <!-- 통계 -->
                 <div id="exploreStats" class="d-flex gap-2 mb-4 flex-wrap">
@@ -34,8 +38,8 @@ import Footer from '../components/Footer.astro';
                     <div class="col-lg-4">
                         <div class="card h-100 shadow-sm">
                             <div class="card-header bg-transparent fw-bold">
-                                <i class="bi bi-link-45deg text-secondary"></i> 고아 문서
-                                <span class="text-muted small fw-normal">— 다른 문서에서 링크되지 않은 문서</span>
+                                <i class="bi bi-link-45deg text-secondary"></i> 연결을 기다리는 문서
+                                <span class="text-muted small fw-normal">다른 문서와 이어 주면 더 쉽게 찾을 수 있어요</span>
                             </div>
                             <div class="card-body p-2" id="orphansList"></div>
                         </div>
@@ -46,7 +50,7 @@ import Footer from '../components/Footer.astro';
                         <div class="card h-100 shadow-sm">
                             <div class="card-header bg-transparent fw-bold">
                                 <i class="bi bi-pencil-fill text-danger"></i> 미작성 문서
-                                <span class="text-muted small fw-normal">— 참조가 있지만 작성되지 않은 문서</span>
+                                <span class="text-muted small fw-normal">누군가 찾고 있지만 아직 비어 있는 이야기</span>
                             </div>
                             <div class="card-body p-2" id="wantedList"></div>
                         </div>
@@ -79,7 +83,7 @@ import Footer from '../components/Footer.astro';
                         <div class="d-flex align-items-center gap-3">
                             <i class="bi bi-shuffle text-success fs-3"></i>
                             <div>
-                                <div class="fw-bold">랜덤 탐색</div>
+                                <div class="fw-bold">뜻밖의 발견</div><p class="small text-muted mb-0">어떤 이야기를 만나게 될까요?</p>
                             </div>
                         </div>
                         <button type="button" class="btn btn-wiki" onclick="goRandomPage()">
@@ -93,16 +97,16 @@ import Footer from '../components/Footer.astro';
                     <h2 class="h5 mb-3"><i class="bi bi-clock-history text-primary"></i> 문서 활동</h2>
 
                     <!-- 탭 네비게이션 -->
-                    <ul class="nav nav-tabs mb-3" role="tablist">
+                    <ul class="nav nav-tabs mb-3" role="tablist" aria-label="문서 활동 보기">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active" id="tab-recent" data-bs-toggle="tab" data-bs-target="#pane-recent"
-                                type="button" role="tab" aria-selected="true">
+                                type="button" role="tab" aria-controls="pane-recent" aria-selected="true">
                                 <i class="bi bi-clock-history"></i> 최근 수정 내역
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
                             <button class="nav-link" id="tab-allpages" data-bs-toggle="tab" data-bs-target="#pane-allpages"
-                                type="button" role="tab" aria-selected="false">
+                                type="button" role="tab" aria-controls="pane-allpages" aria-selected="false">
                                 <i class="bi bi-journals"></i> 모든 문서 목록
                             </button>
                         </li>
@@ -111,7 +115,7 @@ import Footer from '../components/Footer.astro';
                     <!-- 탭 콘텐츠 -->
                     <div class="tab-content">
                         <!-- 최근 수정 내역 탭 -->
-                        <div class="tab-pane fade show active" id="pane-recent" role="tabpanel">
+                        <div class="tab-pane fade show active" id="pane-recent" role="tabpanel" aria-labelledby="tab-recent">
                             <div class="table-responsive"
                                 style="width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
                                 <div class="revision-list" id="revisionsList" style="width: max-content; min-width: 100%;"></div>
@@ -122,7 +126,7 @@ import Footer from '../components/Footer.astro';
                         </div>
 
                         <!-- 모든 문서 목록 탭 -->
-                        <div class="tab-pane fade" id="pane-allpages" role="tabpanel">
+                        <div class="tab-pane fade" id="pane-allpages" role="tabpanel" aria-labelledby="tab-allpages">
                             <!-- 전체보기 진입점 + 정렬 드롭다운 -->
                             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                                 <a href="/all" class="btn btn-sm btn-wiki"><i class="bi bi-grid-3x3-gap"></i> 전체보기</a>

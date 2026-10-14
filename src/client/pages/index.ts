@@ -234,6 +234,8 @@ import { createTocController } from '../article/toc';
     let __groupNavReqSeq = 0;
 
     function hideAllPages() {
+      document.body.classList.remove('home-view');
+      document.querySelector('[data-nav-page="home"]')?.removeAttribute('aria-current');
       document.getElementById('loading').classList.add('d-none');
       document.getElementById('spaProgressBar').classList.add('d-none');
       document.getElementById('homePage').classList.add('d-none');
@@ -498,10 +500,20 @@ import { createTocController } from '../article/toc';
       }
     }
 
-    // ── 홈(환영 페이지 대신 /w/[WIKI_NAME] 으로 이동) ──
+    // 홈 문서 설정은 서버가 처리하고, 기본 루트에서는 탐색 랜딩을 표시한다.
     async function showHome() {
-      const wikiName = typeof window.appConfig !== 'undefined' && window.appConfig.wikiName ? window.appConfig.wikiName : 'KidsWiki';
-      navigateTo(`/w/${encodeURIComponent(wikiName)}`);
+      if (window.location.pathname !== '/') {
+        window.location.href = '/';
+        return;
+      }
+      hideAllPages();
+      currentSlug = null;
+      currentPage = null;
+      document.body.classList.add('home-view');
+      document.getElementById('homePage').classList.remove('d-none');
+      document.title = window.appConfig?.wikiName || 'KidsWiki';
+      document.querySelector('[data-nav-page="home"]')?.setAttribute('aria-current', 'page');
+      wikiToc.refresh();
     }
 
     // ── 문서 보기 ──

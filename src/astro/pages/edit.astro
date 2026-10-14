@@ -425,8 +425,8 @@ const ssrJson = JSON.stringify({ _wikiSyntax: branding.wikiSyntax })
                 <button class="btn btn-wiki" id="saveBtn" onclick="savePage()" disabled>
                     <i class="mdi mdi-check"></i> 저장
                 </button>
-                <button class="btn btn-wiki-outline" id="saveDraftBtn" onclick="saveDraftToLocal()"
-                    title="현재 본문을 이 브라우저에 임시 저장합니다">
+                <button class="btn btn-wiki-outline" id="saveDraftBtn" onclick="saveDraftToDatabase()"
+                    title="현재 본문을 내 계정에 비공개 초안으로 저장합니다">
                     <i class="mdi mdi-tray-arrow-down"></i> 초안 저장
                 </button>
                 <button class="btn btn-wiki-outline" onclick="cancelEdit()">

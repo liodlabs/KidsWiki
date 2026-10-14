@@ -171,7 +171,7 @@ import { renderUserAvatar } from '../utils/avatar';
                 account_inactive: '탈퇴 또는 차단된 계정은 합칠 수 없습니다.',
                 privileged_account: '일반 관리자 또는 토론 관리자 계정은 자동으로 합칠 수 없습니다.',
                 provider_conflict: '두 계정에 같은 공급자의 로그인이 있어 자동으로 합칠 수 없습니다.',
-                draft_conflict: '두 계정에 같은 문서의 MCP 초안이 있어 먼저 하나를 정리해야 합니다.',
+                draft_conflict: '두 계정에 같은 문서의 초안이 있어 먼저 하나를 정리해야 합니다.',
                 pending_edit_conflict: '두 계정에 같은 문서의 편집 요청이 있어 먼저 하나를 정리해야 합니다.',
                 not_found: '연결된 로그인 계정을 찾을 수 없습니다.',
                 last_identity: '마지막 로그인 계정은 연결 해지 대신 회원 탈퇴를 이용해주세요.',

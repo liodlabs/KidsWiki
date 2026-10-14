@@ -30,7 +30,7 @@ import astro from './astro.mjs';
 import vector from './vector.mjs';
 import bootstrap from './bootstrap.mjs';
 import via from './via.mjs';
-// 키위 스킨 5종 — 색만 정의한다(서체·모서리·행간은 style.css :root 브랜드 기준선).
+// 브랜드 스킨 5종 — 색만 정의한다(서체·모서리·행간은 style.css :root 브랜드 기준선).
 import kiwiSlice from './kiwi-slice.mjs';
 import kiwiFlesh from './kiwi-flesh.mjs';
 import kiwiSkin from './kiwi-skin.mjs';
@@ -224,7 +224,7 @@ export const THEME_LABELS = {
     bootstrap: 'Bootstrap',
     via: 'VIA',
     'kiwi-slice': '키위 단면',
-    'kiwi-flesh': '키위 과육',
+    'kiwi-flesh': '페이퍼 · 잉크',
     'kiwi-skin': '키위 껍질',
     'kiwi-gold': '골드키위',
     sage: '세이지',

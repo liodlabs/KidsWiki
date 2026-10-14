@@ -192,6 +192,11 @@ function getCurrentPage() {
 // 필터 컨트롤(select/input/checkbox)을 URL 의 현재 필터 상태로 맞춘다.
 function syncFilterControls() {
     const f = getFilters();
+    const hasFilters = f.sort !== 'relevance' || f.field !== 'all' || !!f.category || !!f.from || !!f.to || f.include_private === '0' || f.rag === '1';
+    const filterStatus = document.getElementById('searchFilterStatus');
+    if (filterStatus) filterStatus.textContent = hasFilters ? '조건 적용 중' : '정렬 · 범위 · 카테고리';
+    const filterPanel = document.getElementById('searchFilters');
+    if (filterPanel && hasFilters) filterPanel.open = true;
     const sortEl = document.getElementById('sortSelect');
     if (sortEl) sortEl.value = f.sort;
     const fieldEl = document.getElementById('fieldSelect');
@@ -320,6 +325,7 @@ function onFilterChange() {
     if (nextSearch === curSearch) return;
 
     history.pushState({}, '', `?${nextSearch}`);
+    syncFilterControls();
     performSearch(currentQuery, currentMode, 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }

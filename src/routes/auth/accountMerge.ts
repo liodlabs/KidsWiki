@@ -1,3 +1,4 @@
+import { ensureEditorDraftSchema } from '../../utils/editorDrafts.ts';
 import { isUserId, type UserId } from '../../shared/userId.ts';
 import { isSuperAdminEmail } from '../../utils/auth.ts';
 import { ensureContributorTrustSchema, recalculateContributorTrust } from '../../utils/contributorTrust.ts';
@@ -188,7 +189,8 @@ export async function mergeAccounts(
         return empty('provider_conflict');
     }
 
-    const [draftConflict, pendingEditConflict] = await Promise.all([
+    await ensureEditorDraftSchema(db);
+    const [draftConflict, pendingEditConflict, editorDraftConflict] = await Promise.all([
         db.prepare(`SELECT 1 FROM mcp_drafts a
                     JOIN mcp_drafts b ON b.slug = a.slug AND b.user_id = ?
                     WHERE a.user_id = ? LIMIT 1`)
@@ -199,8 +201,11 @@ export async function mergeAccounts(
                     WHERE a.author_id = ? LIMIT 1`)
             .bind(absorbedUserId, survivorUserId)
             .first(),
+        db.prepare(`SELECT 1 FROM editor_drafts a JOIN editor_drafts b
+                    ON b.draft_key = a.draft_key AND b.user_id = ? WHERE a.user_id = ? LIMIT 1`)
+            .bind(absorbedUserId, survivorUserId).first(),
     ]);
-    if (draftConflict) return empty('draft_conflict');
+    if (draftConflict || editorDraftConflict) return empty('draft_conflict');
     if (pendingEditConflict) return empty('pending_edit_conflict');
 
     await ensureContributorTrustSchema(db);
@@ -253,6 +258,7 @@ export async function mergeAccounts(
         db.prepare('UPDATE ticket_comments SET author_id = ? WHERE author_id = ?').bind(survivorUserId, absorbedUserId),
         db.prepare('UPDATE admin_log SET user = ? WHERE user = ?').bind(survivorUserId, absorbedUserId),
         db.prepare('UPDATE mcp_drafts SET user_id = ? WHERE user_id = ?').bind(survivorUserId, absorbedUserId),
+        db.prepare('UPDATE editor_drafts SET user_id = ? WHERE user_id = ?').bind(survivorUserId, absorbedUserId),
         db.prepare('UPDATE pending_edits SET author_id = ? WHERE author_id = ?').bind(survivorUserId, absorbedUserId),
         db.prepare(`INSERT INTO contributor_trust
                         (user_id, status, mode, cycle_started_at, cooldown_until, trusted_since, updated_at)

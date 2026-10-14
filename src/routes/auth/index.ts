@@ -1,3 +1,4 @@
+import { ensureEditorDraftSchema } from '../../utils/editorDrafts';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
@@ -118,6 +119,7 @@ async function isLastActiveSuperAdmin(c: Context<Env>, userId: UserId): Promise<
 async function finalizeAccountDeletion(c: Context<Env>, userId: UserId): Promise<void> {
     const db = c.env.DB;
     await ensureUserIdentities(db);
+    await ensureEditorDraftSchema(db);
 
     const sessions = await db.prepare('SELECT id FROM sessions WHERE user_id = ?')
         .bind(userId)
@@ -128,6 +130,7 @@ async function finalizeAccountDeletion(c: Context<Env>, userId: UserId): Promise
         ).bind(userId),
         db.prepare('UPDATE user_identities SET provider_email = NULL WHERE user_id = ?').bind(userId),
         db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+        db.prepare('DELETE FROM editor_drafts WHERE user_id = ?').bind(userId),
         db.prepare('UPDATE oauth_tokens SET revoked_at = unixepoch() WHERE user_id = ? AND revoked_at IS NULL').bind(userId),
         db.prepare('UPDATE oauth_codes SET used_at = unixepoch() WHERE user_id = ? AND used_at IS NULL').bind(userId),
     ];

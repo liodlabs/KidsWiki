@@ -79,6 +79,7 @@ test('중복 계정은 대표 계정으로 이동되고 예전 ID는 별칭으�
     sqlite.prepare("INSERT INTO user_badges (user_id, badge_key, assigned_by) VALUES (?, 'verified_expert', ?)").run(absorbed, survivor);
     sqlite.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES ('session-b', ?, 9999999999)").run(absorbed);
 
+    sqlite.prepare("INSERT INTO editor_drafts (user_id, draft_key, payload, revision, updated_at) VALUES (?, 'wiki_draft_개인초안', '{}', 'rev-a', 1)").run(absorbed);
     const result = await mergeAccounts(db, survivor, absorbed);
 
     assert.equal(result.status, 'merged');
@@ -87,6 +88,7 @@ test('중복 계정은 대표 계정으로 이동되고 예전 ID는 별칭으�
     assert.equal(sqlite.prepare('SELECT author_id FROM revisions WHERE page_id = ?').get(pageId).author_id, survivor);
     assert.equal(sqlite.prepare('SELECT scope FROM page_watches WHERE user_id = ? AND page_id = ?').get(survivor, pageId).scope, 'subtree');
     assert.equal(sqlite.prepare('SELECT user_id FROM mcp_drafts').get().user_id, survivor);
+    assert.equal(sqlite.prepare('SELECT user_id FROM editor_drafts').get().user_id, survivor);
     assert.equal(sqlite.prepare('SELECT status FROM contributor_trust WHERE user_id = ?').get(survivor).status, 'trusted');
     assert.equal(sqlite.prepare('SELECT user_id FROM contributor_trust_events').get().user_id, survivor);
     assert.equal(sqlite.prepare('SELECT user_id FROM user_badges').get().user_id, survivor);
@@ -172,4 +174,23 @@ test('연결된 최고관리자 이메일은 기준 Identity와 대표 이메일
     assert.equal(user.uid, 'naver-user');
     assert.equal(user.email, 'admin@example.com');
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM user_identities WHERE user_id = ?').get(userId).count, 2);
+});
+
+
+test('같은 문서의 개인 초안이 양쪽에 있으면 계정 통합을 중단해 두 초안을 보존한다', async () => {
+    const sqlite = new DatabaseSync(':memory:');
+    sqlite.exec(readFileSync(new URL('../migrations/schema.sql', import.meta.url), 'utf8'));
+    const db = new TestD1(sqlite);
+    const survivor = '123456789ABCDEFGHJKLMN';
+    const absorbed = '23456789ABCDEFGHJKLMNP';
+    for (const [id, provider] of [[survivor, 'google'], [absorbed, 'naver']]) {
+        sqlite.prepare("INSERT INTO users (id, provider, uid, name, role) VALUES (?, ?, ?, ?, 'user')").run(id, provider, id, id);
+        sqlite.prepare('INSERT INTO user_identities (user_id, provider, provider_uid) VALUES (?, ?, ?)').run(id, provider, id);
+        sqlite.prepare("INSERT INTO editor_drafts (user_id, draft_key, payload, revision, updated_at) VALUES (?, 'wiki_draft_같은문서', ?, ?, 1)").run(id, JSON.stringify({ content: id }), id);
+    }
+    assert.equal((await mergeAccounts(db, survivor, absorbed)).status, 'draft_conflict');
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM editor_drafts').get().n, 2);
+    assert.equal(sqlite.prepare('SELECT role FROM users WHERE id = ?').get(absorbed).role, 'user');
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM user_identities WHERE user_id = ?').get(absorbed).n, 1);
+    sqlite.close();
 });

@@ -13,9 +13,15 @@
             <span class="app-wiki-name">KidsWiki</span>
         </a>
 
+        <div class="wiki-primary-nav" aria-label="주요 메뉴">
+            <a href="/" data-nav-page="home">홈</a>
+            <a href="/all" data-nav-page="all">모든 문서</a>
+            <a href="/explore" data-nav-page="explore">둘러보기</a>
+        </div>
+
         <!-- 유저 버튼 & 알림 패널 통합 -->
         <div class="dropdown ms-2 d-none position-relative" id="navUser">
-            <a href="#" class="d-flex align-items-center text-decoration-none position-relative" data-bs-toggle="dropdown" aria-expanded="false">
+            <a href="#" class="d-flex align-items-center text-decoration-none position-relative" data-bs-toggle="dropdown" aria-expanded="false" aria-label="내 계정 메뉴">
                <span id="userAvatar"></span>
                <span class="notification-badge d-none" id="notificationBadge"></span>
             </a>
@@ -68,19 +74,19 @@
         <button class="btn border-0 px-1 ms-2 d-none" type="button" id="navSettings" onclick="openSettingsModal()" title="개인 설정" aria-label="개인 설정">
             <i class="mdi mdi-cog-outline text-body"></i>
         </button>
-        <a class="btn border-0 px-1 ms-2 d-none" id="navLogin" href="/login" title="로그인"><i class="mdi mdi-login text-body"></i></a>
+        <a class="btn border-0 px-1 ms-2 d-none" id="navLogin" href="/login" title="로그인"><i class="bi bi-person" aria-hidden="true"></i><span class="nav-login-label">로그인</span></a>
 
         <!-- 햄버거 버튼 (사이드바 토글) -->
         <button class="navbar-toggler border-0 px-1 ms-2" type="button" data-bs-toggle="offcanvas"
-            data-bs-target="#mobileSidebar" aria-controls="mobileSidebar">
+            data-bs-target="#mobileSidebar" aria-controls="mobileSidebar" aria-label="전체 메뉴 열기">
             <i class="mdi mdi-menu fs-2 text-body"></i>
         </button>
 
         <!-- 하단 줄: 검색창 (항상 full-width로 다음 줄에 표시) -->
         <form class="nav-search-form d-flex" onsubmit="doSearch(event)">
-            <button class="btn border-0 px-1 me-1" type="button" title="랜덤 문서" onclick="goRandomPage()"><i class="bi bi-shuffle text-body"></i></button>
+
             <div class="input-group">
-                <input type="text" id="searchInput" class="form-control" placeholder="문서 검색..." autocomplete="off">
+                <input type="text" id="searchInput" class="form-control" placeholder="문서 검색" autocomplete="off" aria-label="문서 검색">
                 <button class="btn search-mode-btn" type="submit" aria-label="검색">
                     <i class="mdi mdi-magnify"></i>
                 </button>

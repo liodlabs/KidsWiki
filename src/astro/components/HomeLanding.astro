@@ -1,0 +1,90 @@
+---
+const ages = [
+  { name: '0~6개월', title: '처음 만나는 세상', detail: '수유부터 첫 뒤집기까지' },
+  { name: '7~12개월', title: '하나씩, 새롭게', detail: '이유식과 첫 걸음 준비' },
+  { name: '1~3세', title: '스스로 해 볼래요', detail: '말하기와 생활 습관' },
+  { name: '4~6세', title: '놀이로 자라는 시간', detail: '친구와 함께 배우기' },
+  { name: '초등', title: '더 넓은 세상으로', detail: '학교생활과 마음의 성장' },
+];
+const topics = [
+  { name: '수유·이유식', icon: 'cup-straw', detail: '잘 먹고, 쑥쑥 자라도록', tone: 'gold' },
+  { name: '수면', icon: 'moon-stars', detail: '아이도 부모도 편안한 밤', tone: 'violet' },
+  { name: '발달', icon: 'flower1', detail: '우리 아이의 속도에 맞게', tone: 'green' },
+  { name: '예방접종', icon: 'bandaid', detail: '시기별로 챙기는 건강', tone: 'blue' },
+  { name: '안전', icon: 'shield-check', detail: '안심할 수 있는 일상', tone: 'rose' },
+];
+const categoryHref = (name: string) => `/w/${encodeURIComponent(`카테고리:${name}`)}`;
+---
+<div class="home-landing">
+  <section class="home-hero" aria-labelledby="homeTitle">
+    <div class="home-hero-copy">
+      <p class="home-eyebrow"><span class="home-eyebrow-dot" aria-hidden="true"></span> 함께 쓰는 육아 지식, <span class="app-wiki-name">KidsWiki</span></p>
+      <h1 id="homeTitle">아이와 함께 자라는<br />우리의 지식.</h1>
+      <p class="home-hero-lead">처음이라 궁금한 순간마다.<br />부모들의 경험과 지식을 함께 찾아보세요.</p>
+      <form class="home-search" action="/search" method="get" role="search">
+        <label class="visually-hidden" for="homeSearchInput">궁금한 육아 정보 검색</label>
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input id="homeSearchInput" name="q" type="search" placeholder="지금, 어떤 것이 궁금하세요?" required />
+        <button type="submit" aria-label="육아 정보 검색"><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+      </form>
+      <div class="home-search-hints">
+        <span>이런 궁금증부터</span>
+        <a href="/search?q=%EC%9D%B4%EC%9C%A0%EC%8B%9D">이유식 시작</a>
+        <a href="/search?q=%EC%88%98%EB%A9%B4">아기 수면</a>
+        <a href="/search?q=%EC%98%88%EB%B0%A9%EC%A0%91%EC%A2%85">예방접종</a>
+      </div>
+    </div>
+    <div class="home-hero-art" aria-hidden="true">
+      <span class="home-art-label">작은 경험이 모여<br />든든한 지식이 됩니다.</span>
+      <div class="home-art-orbit">
+        <img src="/brand/kiwi-symbol-256.png" alt="" width="256" height="251" fetchpriority="high" />
+        <span class="home-art-note"><i class="bi bi-book" aria-hidden="true"></i> 오늘도, 함께 자라요</span>
+      </div>
+      <span class="home-art-caption">KiWi · Kids Wiki</span>
+    </div>
+  </section>
+
+  <section class="home-section" aria-labelledby="homeAgeTitle">
+    <div class="home-section-heading">
+      <div><p class="home-eyebrow">성장의 모든 순간</p><h2 id="homeAgeTitle">우리 아이는 지금</h2></div>
+      <span class="home-section-note">월령과 연령에 맞춰 찾아보세요</span>
+    </div>
+    <nav class="home-age-grid" aria-label="월령·연령별 문서">
+      {ages.map((age, index) => <a class="home-age-link" href={categoryHref(age.name)}>
+        <span class="home-age-top"><span class="home-age-number">0{index + 1}</span><i class="bi bi-arrow-up-right" aria-hidden="true"></i></span>
+        <strong>{age.name}</strong><span class="home-age-title">{age.title}</span><span class="home-age-detail">{age.detail}</span>
+      </a>)}
+    </nav>
+  </section>
+
+  <section class="home-section" aria-labelledby="homeTopicTitle">
+    <div class="home-section-heading">
+      <div><p class="home-eyebrow">매일의 궁금증</p><h2 id="homeTopicTitle">어떤 이야기를 찾고 있나요?</h2></div>
+      <a class="home-text-link" href="/all">모든 문서 <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    </div>
+    <nav class="home-topic-grid" aria-label="육아 주제별 문서">
+      {topics.map(topic => <a class="home-topic-link" href={categoryHref(topic.name)}>
+        <span class={`home-topic-icon home-tone-${topic.tone}`}><i class={`bi bi-${topic.icon}`} aria-hidden="true"></i></span>
+        <strong>{topic.name}</strong><span>{topic.detail}</span><i class="bi bi-arrow-right home-topic-arrow" aria-hidden="true"></i>
+      </a>)}
+    </nav>
+  </section>
+
+  <section class="home-section home-community" aria-labelledby="homeRecentTitle">
+    <div class="home-recent">
+      <div class="home-section-heading">
+        <div><p class="home-eyebrow">함께 채워 가는 위키</p><h2 id="homeRecentTitle">새롭게 다듬은 지식</h2></div>
+        <a class="home-text-link" href="/explore#docActivity">최근 활동 <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+      </div>
+      <div class="recent-changes-container home-recent-list" aria-live="polite">
+        <p class="home-recent-placeholder">최근 문서를 불러오고 있어요.</p>
+      </div>
+    </div>
+    <aside class="home-contribute" aria-labelledby="homeContributeTitle">
+      <i class="bi bi-pencil-square" aria-hidden="true"></i>
+      <h2 id="homeContributeTitle">당신의 경험도<br />누군가에겐 길잡이.</h2>
+      <p>알고 있는 작은 지식을 남겨 주세요.<br />함께 읽고 다듬으며 채워 갑니다.</p>
+      <button type="button" class="home-text-link" onclick="goNewPage()">문서 쓰기 <i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+    </aside>
+  </section>
+</div>
