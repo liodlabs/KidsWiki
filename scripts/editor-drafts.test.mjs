@@ -251,3 +251,119 @@ test('섹션 페이지의 문서 버전 충돌을 전체 문서로 승격하고 
         assert.equal(await repo.readDraft(k), null);
     } finally { globalThis.fetch = originalFetch; sqlite.close(); }
 });
+
+test('저장 응답만 유실되면 DB 사본으로 성공을 확인하고 후속 저장도 허용한다', async () => {
+    const { request, sqlite } = fixture();
+    const originalFetch = globalThis.fetch;
+    const k = 'wiki_draft_응답유실';
+    try {
+        const repo = await server.ssrLoadModule('/src/client/edit/drafts.ts');
+        globalThis.fetch = async (path, init) => {
+            const response = await request(path, init);
+            if (init?.method === 'PUT') throw new TypeError('저장 응답 유실');
+            return response;
+        };
+        assert.equal((await repo.writeDraft(k, payload)).content, payload.content);
+        globalThis.fetch = (path, init) => request(path, init);
+        const next = { ...payload, content: '확인 후 추가 편집' };
+        assert.equal((await repo.writeDraft(k, next)).content, next.content);
+        assert.equal((await repo.readDraft(k)).content, next.content);
+    } finally { globalThis.fetch = originalFetch; sqlite.close(); }
+});
+
+test('저장과 확인 응답이 모두 끊겨도 재시도 때 이전 저장을 확인한 뒤 새 본문을 저장한다', async () => {
+    const { request, sqlite } = fixture();
+    const originalFetch = globalThis.fetch;
+    const k = 'wiki_draft_연결복구';
+    try {
+        const repo = await server.ssrLoadModule('/src/client/edit/drafts.ts');
+        globalThis.fetch = async (path, init) => {
+            if (init?.method === 'PUT') await request(path, init);
+            throw new TypeError('네트워크 중단');
+        };
+        await assert.rejects(repo.writeDraft(k, payload), /네트워크/);
+        globalThis.fetch = (path, init) => request(path, init);
+        const next = { ...payload, content: '연결 중단 후 추가 편집' };
+        assert.equal((await repo.writeDraft(k, next)).content, next.content);
+        assert.equal((await repo.readDraft(k)).content, next.content);
+    } finally { globalThis.fetch = originalFetch; sqlite.close(); }
+});
+
+test('저장 응답 본문이 손상되어도 복구하며 기준본이나 섹션 정보가 다른 사본은 채택하지 않는다', async () => {
+    const { request, sqlite } = fixture();
+    const originalFetch = globalThis.fetch;
+    try {
+        const repo = await server.ssrLoadModule('/src/client/edit/drafts.ts');
+        const k = 'wiki_draft_손상응답';
+        globalThis.fetch = async (path, init) => {
+            const response = await request(path, init);
+            return init?.method === 'PUT' ? new Response('{', { status: 200 }) : response;
+        };
+        assert.equal((await repo.writeDraft(k, payload)).content, payload.content);
+        globalThis.fetch = (path, init) => request(path, init);
+        for (const [field, value] of [['base', '다른 기준본'], ['version', 4], ['sectionIndex', 1], ['sectionHeading', '다른 제목']]) {
+            const k = 'wiki_draft_다른정보_' + field;
+            const path = '/api/editor-drafts/' + encodeURIComponent(k);
+            const other = { ...payload, [field]: value };
+            assert.equal((await request(path, put(other))).status, 200);
+            await assert.rejects(repo.writeDraft(k, payload), /다른 기기/);
+            await assert.rejects(repo.writeDraft(k, { ...payload, content: '재시도한 변경' }), /다른 기기/);
+            assert.equal((await (await request(path)).json()).draft.payload[field], value);
+        }
+    } finally { globalThis.fetch = originalFetch; sqlite.close(); }
+});
+
+test('저장이 도달하지 않았으면 재시도하고 다른 기기의 변경은 계속 보호한다', async () => {
+    const { request, sqlite } = fixture();
+    const originalFetch = globalThis.fetch;
+    const k = 'wiki_draft_재시도보호';
+    const path = '/api/editor-drafts/' + encodeURIComponent(k);
+    try {
+        const repo = await server.ssrLoadModule('/src/client/edit/drafts.ts');
+        globalThis.fetch = async () => { throw new TypeError('네트워크 중단'); };
+        await assert.rejects(repo.writeDraft(k, payload), /네트워크/);
+        globalThis.fetch = (path, init) => request(path, init);
+        await repo.writeDraft(k, payload);
+        const saved = (await (await request(path)).json()).draft;
+        const other = { ...payload, content: '다른 기기의 초안' };
+        assert.equal((await request(path, put(other, saved.revision))).status, 200);
+        for (const content of ['내 수정', '재시도한 내 수정']) {
+            await assert.rejects(repo.writeDraft(k, { ...payload, content }), /다른 기기/);
+            assert.equal((await (await request(path)).json()).draft.payload.content, other.content);
+        }
+    } finally { globalThis.fetch = originalFetch; sqlite.close(); }
+});
+
+test('저장 지연을 표시하고 시간 초과 후 본문을 유지한 채 버튼을 다시 활성화한다', async t => {
+    const originalFetch = globalThis.fetch;
+    const button = { disabled: false, innerHTML: '<i></i> 초안 저장', attributes: new Map(),
+        setAttribute(name, value) { this.attributes.set(name, value); },
+        removeAttribute(name) { this.attributes.delete(name); } };
+    const messages = [];
+    const content = '지연 중에도 보존할 본문';
+    globalThis.document = { getElementById: () => button };
+    Object.assign(window, { DRAFT_KEY: 'wiki_draft_시간초과', slug: '시간초과', sectionMode: false,
+        editor: { getMarkdown: () => content },
+        Swal: { fire: async options => { messages.push(options); return {}; } } });
+    globalThis.fetch = async (_path, init) => new Promise((_, reject) => {
+        assert.ok(init.signal, '초안 요청에는 시간 제한이 있어야 한다');
+        init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+    });
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+        const saving = window.saveDraftToDatabase();
+        assert.equal(button.disabled, true);
+        assert.match(button.innerHTML, /저장 중/);
+        assert.equal(button.attributes.get('aria-busy'), 'true');
+        assert.equal(await window.saveDraftToDatabase(), false);
+        t.mock.timers.tick(15_000);
+        await new Promise(resolve => setImmediate(resolve));
+        t.mock.timers.tick(15_000); // 저장 여부를 확인하는 GET에도 같은 제한 적용
+        assert.equal(await saving, false);
+        assert.equal(button.disabled, false);
+        assert.equal(button.innerHTML, '<i></i> 초안 저장');
+        assert.equal(button.attributes.has('aria-busy'), false);
+        assert.equal(window.editor.getMarkdown(), content);
+        assert.match(messages.at(-1).text, /저장 여부.*확인/);
+    } finally { globalThis.fetch = originalFetch; }
+});

@@ -440,8 +440,13 @@ async function saveDraftToDatabase(): Promise<boolean> {
         payload.sectionHeading = window.sectionRange?.headingText || window.sectionHeadingParam || '';
     }
     const button = document.getElementById('saveDraftBtn') as HTMLButtonElement | null;
+    const buttonHtml = button?.innerHTML ?? '';
     draftSavePending = true;
-    if (button) button.disabled = true;
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="mdi mdi-loading mdi-spin" aria-hidden="true"></i> 저장 중…';
+        button.setAttribute('aria-busy', 'true');
+    }
     try {
         await writeDraft(draftKey, payload);
         consumeDraft(draftKey);
@@ -449,7 +454,14 @@ async function saveDraftToDatabase(): Promise<boolean> {
             toast: true, position: 'top-end', timer: 1800, showConfirmButton: false });
         return true;
     } catch (error) { showDraftError(error); return false; }
-    finally { draftSavePending = false; if (button) button.disabled = false; }
+    finally {
+        draftSavePending = false;
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = buttonHtml;
+            button.removeAttribute('aria-busy');
+        }
+    }
 }
 
 // 과거 브라우저 초안은 계정 정보가 없으므로 자동 업로드하지 않는다.
