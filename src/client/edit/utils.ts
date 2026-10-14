@@ -8,7 +8,7 @@
  *   - 커서 좌표 기반 드롭다운 포지셔닝: positionDropdownAtCursor
  *   - 색상 변환: hsvToHex / hexToHsv
  *   - 에디터 상태 초기화 (window.slug / pageVersion / originalContent / editor / ...)
- *   - 로컬 초안 저장/복구: saveDraftToLocal / readDraftFromLocal / checkDraft /
+ *   - DB 초안 저장/복구: saveDraftToDatabase / checkDraft /
  *                       checkSectionDrafts / purgeLegacyAutosaveKeys
  *
  * 마이그레이션 노트:
@@ -35,6 +35,7 @@
  *       글로벌 property 쓰기로 동작 — 모든 raw script 에 'use strict' 없음 확인됨.
  */
 
+import { readDraft, writeDraft, listDraftKeys, deleteDraft, consumeDraft } from './drafts';
 import { escapeHtml } from '../utils/html';
 import './types';
 import type { CMView, DraftPayload, SectionRange } from './types';
@@ -412,101 +413,95 @@ window.sectionRange ??= null;
 window.originalPageMeta ??= null;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 로컬 초안 저장/복구 (수동)
-// 사용자가 "초안 저장" 버튼을 눌렀을 때만 현재 본문을 localStorage 에 저장한다.
-// 저장 시 함께 보관: 초안 본문 / 그 시점의 문서 버전 / 그 시점의 base(originalContent).
-// base 는 나중에 불러올 때 서버 최신본과의 충돌 해결 UI 의 base 로 재사용된다.
+// 계정별 DB 초안 저장/복구 (수동)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function saveDraftToLocal(): boolean {
-    const editor = window.editor;
-    const slug = window.slug;
-    const draftKey = window.DRAFT_KEY;
-    if (!editor || !slug || !draftKey) return false;
-    const content = editor.getMarkdown();
-    if (!content || !content.trim()) {
-        window.Swal?.fire({
-            icon: 'info',
-            title: '저장할 내용이 없습니다',
-            timer: 1200,
-            showConfirmButton: false,
-        });
-        return false;
-    }
-    const pageVersion = window.pageVersion;
-    const originalContent = window.originalContent;
-    const payload: DraftPayload = {
-        content,
-        version: (typeof pageVersion === 'number' || typeof pageVersion === 'string') ? pageVersion : null,
-        base: typeof originalContent === 'string' ? originalContent : '',
-        savedAt: Date.now(),
-    };
-    if (window.sectionMode) {
-        payload.sectionIndex = window.sectionIndex;
-        payload.sectionHeading = (window.sectionRange && window.sectionRange.headingText) || window.sectionHeadingParam || '';
-    }
-    try {
-        localStorage.setItem(draftKey, JSON.stringify(payload));
-        window.Swal?.fire({
-            icon: 'success',
-            title: '초안 저장됨',
-            text: '이 브라우저에 임시 저장했습니다.',
-            toast: true,
-            position: 'top-end',
-            timer: 1500,
-            showConfirmButton: false,
-        });
-        return true;
-    } catch {
-        window.Swal?.fire({
-            icon: 'error',
-            title: '초안 저장 실패',
-            text: '브라우저 저장소에 기록할 수 없습니다. (용량 초과 가능성)',
-        });
-        return false;
-    }
+let draftSavePending = false;
+
+function showDraftError(error: unknown): void {
+    void window.Swal?.fire({ icon: 'error', title: '초안 처리 실패',
+        text: error instanceof Error ? error.message : '초안을 처리하지 못했습니다. 편집 내용은 그대로 유지됩니다.' });
 }
 
-// 저장된 초안을 읽어 정규화한다. 손상된 데이터는 null 반환.
-function readDraftFromLocal(): DraftPayload | null {
+async function saveDraftToDatabase(): Promise<boolean> {
+    const editor = window.editor;
     const draftKey = window.DRAFT_KEY;
-    if (!draftKey) return null;
-    const raw = localStorage.getItem(draftKey);
-    if (!raw) return null;
-    try {
-        const parsed = JSON.parse(raw) as Partial<DraftPayload> | null;
-        if (parsed && typeof parsed.content === 'string') {
-            return {
-                content: parsed.content,
-                version: ('version' in parsed) ? (parsed.version ?? null) : null,
-                base: typeof parsed.base === 'string' ? parsed.base : null,
-                savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : null,
-                sectionIndex: typeof parsed.sectionIndex === 'number' ? parsed.sectionIndex : undefined,
-                sectionHeading: typeof parsed.sectionHeading === 'string' ? parsed.sectionHeading : undefined,
-            };
-        }
-    } catch {
-        // JSON 이 아니면 손상된 잔여 데이터 — 무시하고 정리
+    if (!editor || !window.slug || !draftKey || draftSavePending) return false;
+    const content = editor.getMarkdown();
+    if (!content.trim()) {
+        void window.Swal?.fire({ icon: 'info', title: '저장할 내용이 없습니다', timer: 1200, showConfirmButton: false });
+        return false;
     }
-    localStorage.removeItem(draftKey);
-    return null;
+    const payload: DraftPayload = { content,
+        version: window.pageVersion ?? null,
+        base: typeof window.originalContent === 'string' ? window.originalContent : '', savedAt: null };
+    if (window.sectionMode) {
+        payload.sectionIndex = window.sectionIndex;
+        payload.sectionHeading = window.sectionRange?.headingText || window.sectionHeadingParam || '';
+    }
+    const button = document.getElementById('saveDraftBtn') as HTMLButtonElement | null;
+    draftSavePending = true;
+    if (button) button.disabled = true;
+    try {
+        await writeDraft(draftKey, payload);
+        consumeDraft(draftKey);
+        void window.Swal?.fire({ icon: 'success', title: '초안 저장됨', text: '내 계정에 저장했습니다. 다른 기기에서도 불러올 수 있습니다.',
+            toast: true, position: 'top-end', timer: 1800, showConfirmButton: false });
+        return true;
+    } catch (error) { showDraftError(error); return false; }
+    finally { draftSavePending = false; if (button) button.disabled = false; }
+}
+
+// 과거 브라우저 초안은 계정 정보가 없으므로 자동 업로드하지 않는다.
+function readLegacyDraft(key: string): DraftPayload | null {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Partial<DraftPayload> | null;
+        if (!parsed || typeof parsed.content !== 'string' || !parsed.content.trim()) return null;
+        return { content: parsed.content,
+            version: typeof parsed.version === 'number' || typeof parsed.version === 'string' ? parsed.version : null,
+            base: typeof parsed.base === 'string' ? parsed.base : null,
+            savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : null,
+            sectionIndex: parsed.sectionIndex, sectionHeading: parsed.sectionHeading };
+    } catch { return null; }
+}
+
+async function readDraftWithLegacyImport(key: string): Promise<DraftPayload | null> {
+    const remote = await readDraft(key);
+    const legacy = readLegacyDraft(key);
+    if (!legacy || !window.Swal) return remote;
+    const choice = await window.Swal.fire({ icon: 'info', title: '이 브라우저에 이전 초안이 있습니다',
+        text: remote ? '계정에 저장된 초안도 있습니다. 브라우저 초안을 가져오면 계정 초안을 교체합니다.'
+            : '이전 초안을 현재 로그인한 계정에 저장할까요? 본인 초안인지 확인해주세요.',
+        showCancelButton: true, showDenyButton: !!remote,
+        confirmButtonText: '이 계정에 가져오기', denyButtonText: '계정 초안 사용', cancelButtonText: '나중에' });
+    if (!choice.isConfirmed) return remote;
+    const imported = await writeDraft(key, legacy);
+    // 저장 성공 이후에만 로컬 사본을 정리한다. 저장소 접근 실패도 DB 복원을 막지 않는다.
+    try { localStorage.removeItem(key); } catch { /* DB에는 이미 보관되어 있다. */ }
+    return imported;
+}
+
+async function checkDraft(): Promise<void> {
+    try { await restoreDraft(); } catch (error) { showDraftError(error); }
 }
 
 // 페이지 진입 시 저장된 초안 처리:
 //  1) 본문 동일 → 조용히 삭제
 //  2) 버전이 그대로 → 단순 불러오기 확인
 //  3) 버전이 변경됨 → 경고 후 확인 시 충돌 해결 UI 진입
-async function checkDraft(): Promise<void> {
+async function restoreDraft(): Promise<void> {
     const draftKey = window.DRAFT_KEY;
     if (!draftKey) return;
-    const draft = readDraftFromLocal();
+    const draft = await readDraftWithLegacyImport(draftKey);
     if (!draft) return;
 
     const currentBase = typeof window.originalContent === 'string' ? window.originalContent : '';
 
     // 본문이 서버 최신본과 동일하면 의미 없음 — 정리
     if (draft.content.trim() === currentBase.trim()) {
-        localStorage.removeItem(draftKey);
+        await deleteDraft(draftKey);
         return;
     }
 
@@ -530,12 +525,14 @@ async function checkDraft(): Promise<void> {
             icon: 'warning',
             showCancelButton: true,
             confirmButtonText: '예, 불러오기 (충돌 해결)',
-            cancelButtonText: '아니오, 초안 삭제',
+            showDenyButton: true, denyButtonText: '초안 삭제', cancelButtonText: '나중에',
         });
         if (!result.isConfirmed) {
-            localStorage.removeItem(draftKey);
+            if (result.isDenied) await deleteDraft(draftKey);
             return;
         }
+
+        consumeDraft(draftKey);
 
         // 섹션 편집 페이지에서 발생한 version conflict 는 section-scope 가 아니라
         // full-doc-scope 로 처리한다. 이유:
@@ -623,10 +620,11 @@ async function checkDraft(): Promise<void> {
         icon: 'info',
         showCancelButton: true,
         confirmButtonText: '예, 불러오기',
-        cancelButtonText: '아니오, 삭제',
+        showDenyButton: true, denyButtonText: '초안 삭제', cancelButtonText: '나중에',
     });
 
     if (result.isConfirmed) {
+        consumeDraft(draftKey);
         window.editor?.setMarkdown(draft.content);
         window.scrollToBottom?.();
         await swal.fire({
@@ -638,16 +636,20 @@ async function checkDraft(): Promise<void> {
             timer: 1500,
             showConfirmButton: false,
         });
-    } else {
-        localStorage.removeItem(draftKey);
+    } else if (result.isDenied) {
+        await deleteDraft(draftKey);
     }
 }
 
 // 전체 문서 편집으로 진입했을 때, 같은 슬러그의 섹션 편집 초안이
-// localStorage 에 남아 있으면 사용자에게 불러올지 묻는다.
-// 키 포맷: 'wiki_draft_{slug}#section={N}' — saveDraftToLocal 이 sectionMode 일 때
+// 계정에 남아 있으면 사용자에게 불러올지 묻는다.
+// 키 포맷: 'wiki_draft_{slug}#section={N}' — saveDraftToDatabase 이 sectionMode 일 때
 // sectionIndex / sectionHeading 도 함께 기록한다.
 async function checkSectionDrafts(): Promise<void> {
+    try { await restoreSectionDrafts(); } catch (error) { showDraftError(error); }
+}
+
+async function restoreSectionDrafts(): Promise<void> {
     const slug = window.slug;
     if (!slug || window.sectionMode || window.isExtensionData) return;
     const editor = window.editor;
@@ -660,34 +662,21 @@ async function checkSectionDrafts(): Promise<void> {
     if (conflictUi && conflictUi.style.display !== 'none' && conflictUi.offsetParent !== null) return;
 
     const prefix = 'wiki_draft_' + slug + '#section=';
-    const keys: string[] = [];
+    const keys = await listDraftKeys(prefix);
     try {
         for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith(prefix)) keys.push(k);
+            const key = localStorage.key(i);
+            if (key && key.startsWith(prefix) && /^\d+$/.test(key.slice(prefix.length)) && !keys.includes(key)) keys.push(key);
         }
-    } catch {
-        return;
-    }
+    } catch { /* 브라우저 저장소 없이도 계정 초안은 복원한다. */ }
     if (!keys.length) return;
 
     const swal = window.Swal;
     if (!swal) return;
 
     for (const key of keys) {
-        let draft: { content: string; sectionIndex?: number; sectionHeading?: string } | null = null;
-        try {
-            const raw = localStorage.getItem(key);
-            if (!raw) continue;
-            draft = JSON.parse(raw);
-        } catch {
-            localStorage.removeItem(key);
-            continue;
-        }
-        if (!draft || typeof draft.content !== 'string') {
-            localStorage.removeItem(key);
-            continue;
-        }
+        const draft = await readDraftWithLegacyImport(key);
+        if (!draft) continue;
 
         const sIdxRaw = (typeof draft.sectionIndex === 'number')
             ? draft.sectionIndex
@@ -706,7 +695,9 @@ async function checkSectionDrafts(): Promise<void> {
             const lines = baseContent.split('\n');
             const currentSection = lines.slice(range.lineIdx, range.endLine).join('\n');
             if (currentSection.trim() === draft.content.trim()) {
-                localStorage.removeItem(key);
+                // 아직 제출하지 않은 전체 초안에 같은 내용이 있을 때는 사본을 보존한다.
+                if (baseContent === window.originalContent) await deleteDraft(key);
+                else consumeDraft(key);
                 continue;
             }
         }
@@ -720,7 +711,7 @@ async function checkSectionDrafts(): Promise<void> {
                 confirmButtonText: '초안 삭제',
                 cancelButtonText: '나중에',
             });
-            if (result.isConfirmed) localStorage.removeItem(key);
+            if (result.isConfirmed) await deleteDraft(key);
             continue;
         }
 
@@ -737,8 +728,16 @@ async function checkSectionDrafts(): Promise<void> {
 
         if (result.isConfirmed) {
             const merged = mergeSectionIntoFull(baseContent, range, draft.content);
+            consumeDraft(key);
+            const currentSection = baseContent.split('\n').slice(range.lineIdx, range.endLine).join('\n');
+            // 섹션도 기준본이 달라졌다면 전체 문서의 3-way 충돌 해결로 이어진다.
+            if (draft.base === null || currentSection.trim() !== draft.base.trim()) {
+                window.originalContent = mergeSectionIntoFull(baseContent, range, draft.base ?? currentSection);
+                editor.setMarkdown(merged);
+                window.showConflictModal?.({ current_version: window.pageVersion ?? null, content: baseContent });
+                return;
+            }
             editor.setMarkdown(merged);
-            localStorage.removeItem(key);
             await swal.fire({
                 icon: 'success',
                 title: '불러옴',
@@ -749,7 +748,7 @@ async function checkSectionDrafts(): Promise<void> {
                 showConfirmButton: false,
             });
         } else if (result.isDenied) {
-            localStorage.removeItem(key);
+            await deleteDraft(key);
         }
     }
 }
@@ -776,7 +775,7 @@ function purgeLegacyAutosaveKeys(): void {
 // edit-conflict.js) 가 bare reference 또는 typeof 가드로 호출하므로 window 에 노출.
 // 모듈은 deferred 라서 이 시점은 모든 classic top-level 실행 후 / 어떤
 // DOMContentLoaded 핸들러보다 앞이다.
-// edit.html 의 인라인 onclick="saveDraftToLocal()" 도 여기에 의존한다.
+// edit.html 의 인라인 onclick="saveDraftToDatabase()" 도 여기에 의존한다.
 // ─────────────────────────────────────────────────────────────────────────────
 
 declare global {
@@ -791,8 +790,7 @@ declare global {
         positionDropdownAtCursor?: typeof positionDropdownAtCursor;
         hsvToHex?: typeof hsvToHex;
         hexToHsv?: typeof hexToHsv;
-        saveDraftToLocal?: typeof saveDraftToLocal;
-        readDraftFromLocal?: typeof readDraftFromLocal;
+        saveDraftToDatabase?: typeof saveDraftToDatabase;
         checkDraft?: typeof checkDraft;
         checkSectionDrafts?: typeof checkSectionDrafts;
         purgeLegacyAutosaveKeys?: typeof purgeLegacyAutosaveKeys;
@@ -809,8 +807,7 @@ window.getIsDarkMode = getIsDarkMode;
 window.positionDropdownAtCursor = positionDropdownAtCursor;
 window.hsvToHex = hsvToHex;
 window.hexToHsv = hexToHsv;
-window.saveDraftToLocal = saveDraftToLocal;
-window.readDraftFromLocal = readDraftFromLocal;
+window.saveDraftToDatabase = saveDraftToDatabase;
 window.checkDraft = checkDraft;
 window.checkSectionDrafts = checkSectionDrafts;
 window.purgeLegacyAutosaveKeys = purgeLegacyAutosaveKeys;

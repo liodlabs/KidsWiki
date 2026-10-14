@@ -23,6 +23,7 @@ import pushRoutes from './routes/push';
 import ticketRoutes from './routes/ticket';
 import mcpRoutes from './routes/mcp';
 import mcpSubmissionsRoutes from './routes/mcp-submissions';
+import editorDraftRoutes from './routes/editor-drafts';
 import pendingEditsRoutes from './routes/pending-edits';
 import oauthRoutes from './routes/oauth';
 import analyticsRoutes from './routes/analytics';
@@ -160,6 +161,7 @@ app.route('/api', ticketRoutes);
 app.route('/api/mcp', mcpRoutes);
 app.route('/api', mcpSubmissionsRoutes);
 app.route('/api', pendingEditsRoutes);
+app.route('/api', editorDraftRoutes);
 app.route('/', oauthRoutes); // /.well-known/* + /oauth/*
 app.route('/api/admin/analytics', analyticsRoutes);
 app.route('/api', blogRoutes);

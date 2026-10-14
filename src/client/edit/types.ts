@@ -86,16 +86,7 @@ export interface PageMeta {
     editor_note?: string | null;
 }
 
-/** localStorage 에 저장되는 초안 페이로드 */
-export interface DraftPayload {
-    content: string;
-    version: number | string | null;
-    base: string | null;
-    savedAt: number | null;
-    /** 섹션 편집 모드에서만 기록 */
-    sectionIndex?: number;
-    sectionHeading?: string;
-}
+export type { DraftPayload } from '../../shared/editorDraft';
 
 /** common.js 의 mountMediaTagInput 가 반환하는 위젯 핸들 */
 export interface MediaTagWidget {

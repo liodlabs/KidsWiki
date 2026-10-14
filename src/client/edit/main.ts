@@ -21,6 +21,7 @@
  *   선언된 window 프로퍼티를 직접 read/write 한다 — 모듈 내부 로컬 미러는 두지 않는다.
  */
 import './types';
+import { captureDraftCleanup } from './drafts';
 import { escapeHtml } from '../utils/html';
 import { normalizeSlug, hasSlugForbiddenChars } from '../utils/slug';
 import { CDN_URLS } from '../../shared/cdn';
@@ -4010,6 +4011,7 @@ async function openSplitToSubdocModal(): Promise<void> {
 
 // ── 저장 ──
 async function savePage() {
+    const clearSubmittedDrafts = captureDraftCleanup();
     if (BLOG_MODE) {
         await saveBlogPost();
         return;
@@ -4270,11 +4272,8 @@ async function savePage() {
                 return;
             }
             // 승인 성공.
-            if (DRAFT_KEY) localStorage.removeItem(DRAFT_KEY);
-            if (window.promotedFromDraftKey && window.promotedFromDraftKey !== DRAFT_KEY) {
-                localStorage.removeItem(window.promotedFromDraftKey);
-                window.promotedFromDraftKey = null;
-            }
+            if (!erData.partial) await clearSubmittedDrafts();
+            window.promotedFromDraftKey = null;
             editRequestId = null;
             isSuccess = true;
             await window.Swal.fire({
@@ -4469,11 +4468,8 @@ async function savePage() {
         // 편집 요청으로 보류된다. 서버가 200 + { pending: true } 로 응답하므로 정상 저장과 구분해
         // "편집 요청 제출" 안내를 띄우고 공개 문서(마지막 승인본) 로 이동한다.
         if (saveResult && saveResult.pending) {
-            if (DRAFT_KEY) localStorage.removeItem(DRAFT_KEY);
-            if (window.promotedFromDraftKey && window.promotedFromDraftKey !== DRAFT_KEY) {
-                localStorage.removeItem(window.promotedFromDraftKey);
-                window.promotedFromDraftKey = null;
-            }
+            await clearSubmittedDrafts();
+            window.promotedFromDraftKey = null;
             isSuccess = true; // beforeunload 경고 방지
             await window.Swal.fire({
                 icon: 'info',
@@ -4485,13 +4481,8 @@ async function savePage() {
             return;
         }
 
-        if (DRAFT_KEY) localStorage.removeItem(DRAFT_KEY);
-        // checkDraft 의 section→full promotion 으로 인해 원래 section 초안 키가
-        // DRAFT_KEY 와 달라진 경우, 그 키도 함께 정리한다.
-        if (window.promotedFromDraftKey && window.promotedFromDraftKey !== DRAFT_KEY) {
-            localStorage.removeItem(window.promotedFromDraftKey);
-            window.promotedFromDraftKey = null;
-        }
+        await clearSubmittedDrafts();
+        window.promotedFromDraftKey = null;
 
         // MCP 편집안 충돌 해결 모드로 저장이 완료됐다면 제출안(draft) 을 정리한다.
         // /resolve 는 새 리비전을 만들지 않고 draft + 알림만 삭제한다 (리비전은 위 PUT 이 이미 생성).
