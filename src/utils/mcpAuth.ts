@@ -7,13 +7,13 @@ import { ensureMcpInstantApplyMigration } from './mcpInstantApplyMigration';
 /**
  * MCP Bearer 토큰 인증 공용 로직.
  *
- * 전역 위키 MCP(`routes/mcp.ts`)와 워크스페이스 MCP(`routes/ws-mcp.ts`)가 동일한
+ * 전역 위키 MCP, 워크스페이스 MCP, 개인 초안 REST API가 동일한
  * 토큰-해시 조회(mcp_api_keys / oauth_tokens), 만료/폐기/scope 검증, super_admin 보정,
  * ban 처리, User 객체 구성을 공유한다. (이전에는 ws-mcp.ts 에 mcp.ts 의 비공개
  * tryAuthenticateBearer 가 ~115줄 복제되어 있었다.)
  *
- * 두 호출자가 갈리는 정책 — Authorization 헤더 부재 처리(전역 MCP 는 guest 통과, 워크스페이스
- * MCP 는 401)와 권한 부족 처리(전역 MCP 는 guest 강등, 워크스페이스 MCP 는 401) — 는
+ * 호출자별 정책 — Authorization 헤더 부재 처리(전역 MCP 는 guest 통과, 개인 초안은 세션 확인)와
+ * 권한 부족 처리(전역 MCP 는 guest 강등, 개인 초안은 거부) — 는
  * 이 함수가 결정하지 않는다. 본 함수는 토큰을 해석해 판별 가능한 결과만 돌려주고,
  * 각 라우트가 자기 정책에 맞춰 분기한다(아래 BearerAuthResult).
  *

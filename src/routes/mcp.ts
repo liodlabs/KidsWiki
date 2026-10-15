@@ -24,6 +24,7 @@ import {
 } from './admin-mcp';
 import { APPLY_EDIT_TOOL_DEF, dispatchApplyEditTool } from '../utils/mcpDraftApply';
 import { isTrustedContributor } from '../utils/contributorTrust';
+import { PERSONAL_DRAFT_READ_TOOLS, PERSONAL_DRAFT_WRITE_TOOLS, dispatchPersonalDraftTool } from './mcp-editor-drafts';
 
 const mcpRoutes = new Hono<Env>();
 
@@ -144,6 +145,8 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
     const sharedToolDefs = getSharedToolDefs(c.env);
     const visibleToolDefs = [
         ...sharedToolDefs,
+        ...(user && rbac.can(role, 'wiki:read') ? PERSONAL_DRAFT_READ_TOOLS : []),
+        ...(user && rbac.can(role, 'wiki:edit') ? PERSONAL_DRAFT_WRITE_TOOLS : []),
         ...(canEdit ? getUserToolDefs(canInstantApply) : []),
         ...(isAdmin ? ADMIN_ONLY_TOOL_DEFS : []),
     ];
@@ -212,6 +215,11 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
 
             const shared = await dispatchReadTool(c, toolName, args, sharedToolDefs);
             if (shared) return { jsonrpc: '2.0', id, result: shared };
+
+            if (user) {
+                const personalDraft = await dispatchPersonalDraftTool(c, toolName, args);
+                if (personalDraft) return { jsonrpc: '2.0', id, result: personalDraft };
+            }
 
             // apply_edit(즉시 적용) — canInstantApply 사용자에게만 visibleToolDefs 에 포함되므로
             // 여기 도달 시 이미 게이팅을 통과한 상태다. 디스패처가 설정/소유/충돌을 재검증한다.

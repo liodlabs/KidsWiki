@@ -62,6 +62,36 @@ Cloudflare 프리티어만으로 돌아가는 서버리스 위키입니다. 마�
 
 신규 설치는 `migrations/schema.sql`에 포함되어 있습니다. 기존 설치는 `npm run db:migrate:remote`로 `0002_editor_drafts.sql`을 적용할 수 있으며, 런타임에서도 최초 접근 시 테이블을 준비합니다. 관련 검증은 `node --test scripts/editor-drafts.test.mjs scripts/account-merge.test.mjs`로 실행합니다.
 
+### API 토큰으로 내 초안 사용
+
+마이페이지에서 발급한 API 키를 `Authorization: Bearer <API 키>`로 보내면 같은 계정의 **내 초안**을 저장·조회·수정·삭제할 수 있습니다. API와 브라우저가 같은 초안을 사용하므로 일반 유저·토론 관리자의 4개 보관 한도도 합산합니다. 토큰을 명시하면 쿠키보다 토큰 소유자를 우선하며, 만료·폐기·차단·탈퇴한 토큰은 거부합니다. 이 인증은 개인 초안 API에만 추가되며 다른 계정 관리 API에는 적용되지 않습니다.
+
+| 요청 | 동작 |
+| --- | --- |
+| `GET /api/editor-drafts/overview` | 본인의 초안 요약 목록과 보관 한도(`limit: null`이면 무제한) |
+| `GET /api/editor-drafts/:key` | 본문·기준본·`revision` 조회 |
+| `PUT /api/editor-drafts/:key` | 초안 생성·수정 |
+| `DELETE /api/editor-drafts/:key` | `expectedRevision`이 일치하는 초안 삭제 |
+
+`:key`는 `wiki_draft_문서슬러그`를 URL 인코딩한 값입니다. 섹션 초안은 `wiki_draft_문서슬러그#section=0` 형식이고 `payload.sectionIndex`와 `payload.sectionHeading`을 함께 보냅니다. JSON 요청은 `Content-Type: application/json`을 지정합니다. 새 초안은 `expectedRevision: null`, 기존 초안 수정·삭제는 가장 최근 조회 응답의 `revision`을 `expectedRevision`으로 보내며 충돌은 HTTP 409입니다. 기준본과 버전은 편집을 시작할 때 읽은 문서의 값이고, 새 문서나 알 수 없는 값은 `null`로 보냅니다. 기준 버전을 모르는 기존 문서는 브라우저 복원 시 충돌 확인이 필요할 수 있습니다.
+
+```json
+{
+  "expectedRevision": null,
+  "payload": {
+    "content": "작성 중인 본문",
+    "version": null,
+    "base": null
+  }
+}
+```
+
+저장 응답의 `draft.revision`은 다음 수정에 사용하고, `removedKeys`는 보관 한도로 자동 삭제된 초안 목록입니다. 본인의 `user_id`나 작성 시각을 지정할 수는 없습니다.
+
+MCP에서도 `save_personal_draft`, `list_personal_drafts`, `read_personal_draft` 도구로 같은 초안을 다룹니다. 저장 도구는 `title`, `content`, `base_version`, `base_content`, `expected_revision`을 받으며 선택적으로 `section_index`·`section_heading`을 지정합니다. 본문 읽기는 목록에서 받은 `key`를 사용합니다. 일반 기여자도 개인 초안을 저장할 수 있지만 직접 게시 권한은 달라지지 않습니다. 기존 `create_or_update_page`·`list_drafts`는 승인용 MCP 편집안을 계속 다루며 개인 초안과 섞지 않습니다. MCP 도구는 `MCP_MODE`가 활성화된 경우에만 제공됩니다.
+
+연결 검증: `node --test scripts/personal-drafts-api.test.mjs`. 추가 DB 마이그레이션은 없습니다.
+
 ## 라이선스
 
 MIT. 이 프로젝트는 [CloudWiki](https://github.com/eoeoe22/cloudwiki-public) (© 2026 eoeoe22)를 기반으로 합니다.
