@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import type { Context, MiddlewareHandler } from 'hono';
+import type { Context } from 'hono';
 import type { Env } from '../types';
 import type { DraftPayload, EditorDraftSummary } from '../shared/editorDraft';
 import { STANDARD_EDITOR_DRAFT_LIMIT } from '../shared/editorDraft';
 import { requireAuth, requirePermission } from '../middleware/session';
 import { ensureEditorDraftSchema } from '../utils/editorDrafts';
 import { isSuperAdmin } from '../utils/auth';
-import { resolveBearerAuth } from '../utils/mcpAuth';
+import { authenticateApiToken } from '../middleware/apiToken';
 
 const routes = new Hono<Env>();
 const MAX_BYTES = 1_500_000; // 본문 + 병합 기준본. D1의 행 크기 제한보다 작게 유지한다.
@@ -24,22 +24,8 @@ async function draftLimit(c: Context<Env>): Promise<number | null> {
     return role === 'user' || role === 'discussion_manager' ? STANDARD_EDITOR_DRAFT_LIMIT : 0;
 }
 
-const authenticateDrafts: MiddlewareHandler<Env> = async (c, next) => {
-    c.header('Cache-Control', 'no-store');
-    // 토큰을 명시한 요청은 쿠키 계정으로 대신 처리하지 않는다.
-    if (c.req.header('Authorization') !== undefined) {
-        const auth = await resolveBearerAuth(c);
-        if (auth.kind === 'error') return auth.response;
-        if (auth.kind !== 'authenticated') return c.json({ error: 'API 토큰이 필요합니다.' }, 401);
-        if (auth.effectiveRole === 'banned' || auth.effectiveRole === 'deleted') {
-            return c.json({ error: '초안을 이용할 수 없는 계정입니다.' }, 403);
-        }
-        c.set('user', auth.user);
-    }
-    await next();
-};
-routes.use('/editor-drafts', authenticateDrafts);
-routes.use('/editor-drafts/*', authenticateDrafts);
+routes.use('/editor-drafts', authenticateApiToken);
+routes.use('/editor-drafts/*', authenticateApiToken);
 
 function validKey(key: string): boolean {
     return key.startsWith('wiki_draft_') && key.length > 11 && key.length <= 2048 && !/[\u0000-\u001f]/.test(key);
@@ -149,10 +135,9 @@ routes.get('/editor-drafts/:key', requireAuth, c => readEditorDraft(c, c.req.par
 routes.put('/editor-drafts/:key', requireAuth, requirePermission('wiki:edit'),
     async c => saveEditorDraft(c, c.req.param('key'), await c.req.text()));
 
-routes.delete('/editor-drafts/:key', requireAuth, async c => {
-    const key = c.req.param('key');
+export async function deleteEditorDraft(c: Context<Env>, key: string, raw: string) {
     let body: { expectedRevision?: unknown };
-    try { body = await c.req.json(); } catch { return c.json({ error: '잘못된 초안 데이터입니다.' }, 400); }
+    try { body = JSON.parse(raw); } catch { return c.json({ error: '잘못된 초안 데이터입니다.' }, 400); }
     if (!validKey(key) || !body || typeof body.expectedRevision !== 'string'
         || !/^[0-9a-f-]{36}$/.test(body.expectedRevision)) return c.json({ error: '잘못된 초안 데이터입니다.' }, 400);
     await ensureEditorDraftSchema(c.env.DB);
@@ -163,6 +148,9 @@ routes.delete('/editor-drafts/:key', requireAuth, async c => {
         return c.json({ error: conflict }, 409);
     }
     return c.body(null, 204);
-});
+}
+
+routes.delete('/editor-drafts/:key', requireAuth, async c =>
+    deleteEditorDraft(c, c.req.param('key'), await c.req.text()));
 
 export default routes;

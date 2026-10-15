@@ -31,6 +31,7 @@ packages/*/node_modules
 /public/discussions.html
 /public/tickets.html
 /public/mypage.html
+/public/content.html
 /public/index.html
 /public/edit.html
 /public/memo.html

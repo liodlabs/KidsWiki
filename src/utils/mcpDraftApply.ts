@@ -2,7 +2,7 @@
 //
 // mcp_drafts 의 편집안을 실제 리비전으로 확정하는 로직의 단일 소스다. 두 진입점이 공유한다:
 //   1) HTTP 승인: POST /api/mcp-submissions/:id/approve (mcp-submissions.ts) — 승인 대기(submitted)
-//      draft 를 사용자가 마이페이지에서 검토 후 승인.
+//      draft 를 웹 또는 MCP approve_submission으로 검토 후 승인.
 //   2) MCP 즉시 적용: apply_edit 도구 (mcp.ts) — 승인 없는 즉시 반영을 켠 사용자가 승인 단계를 건너뛰고
 //      draft 를 곧바로 리비전으로 확정.
 //
@@ -521,7 +521,7 @@ export async function dispatchApplyEditTool(
         return toolError('Error: 다른 사용자의 draft 는 적용할 수 없습니다.');
     }
     if (draft.submitted_at !== null) {
-        return toolError('Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 마이페이지에서 승인하거나 discard_edit 후 다시 시도하세요.');
+        return toolError('Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. read_submission으로 검토 후 approve_submission 또는 마이페이지에서 승인하세요. 폐기하려면 reject_submission 또는 discard_edit를 사용하세요.');
     }
 
     const outcome = await applyDraftMutation(c, user, rbac, draft, summary);

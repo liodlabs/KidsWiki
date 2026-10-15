@@ -12,7 +12,7 @@ command = "npm run build"
 [assets]
 directory = "public"
 binding = "ASSETS"
-run_worker_first = ["/", "/w/*", "/wiki/*", "/mypage", "/edit", "/memo", "/profile/*", "/search", "/admin", "/admin-media", "/admin-bulk-manage", "/tickets", "/tickets/*", "/setup-profile", "/error", "/sitemap.xml", "/robots.txt", "/login", "/recent-changes", "/explore", "/all", "/components-json-builder", "/auth/*", "/blog", "/blog/*", "/blog-edit", "/qr-login/*", "/sw.js"]
+run_worker_first = ["/", "/w/*", "/wiki/*", "/mypage", "/content", "/edit", "/memo", "/profile/*", "/search", "/admin", "/admin-media", "/admin-bulk-manage", "/tickets", "/tickets/*", "/setup-profile", "/error", "/sitemap.xml", "/robots.txt", "/login", "/recent-changes", "/explore", "/all", "/components-json-builder", "/auth/*", "/blog", "/blog/*", "/blog-edit", "/qr-login/*", "/sw.js"]
 
 
 [[d1_databases]]

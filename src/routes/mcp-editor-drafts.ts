@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import type { Env } from '../types';
 import { normalizeSlug } from '../utils/slug';
 import { SLUG_FORBIDDEN_CHARS } from '../utils/validation';
-import { listEditorDrafts, readEditorDraft, saveEditorDraft } from './editor-drafts';
+import { listEditorDrafts, readEditorDraft, saveEditorDraft, deleteEditorDraft } from './editor-drafts';
 
 export const PERSONAL_DRAFT_READ_TOOLS = [
     {
@@ -20,6 +20,14 @@ export const PERSONAL_DRAFT_READ_TOOLS = [
 ];
 
 export const PERSONAL_DRAFT_WRITE_TOOLS = [
+    {
+        name: 'delete_personal_draft',
+        description: '사용자가 삭제를 요청한 개인 저장 초안을 삭제합니다. read_personal_draft에서 읽은 key와 revision을 보내세요. 다른 기기에서 수정된 초안은 충돌로 거부하며, 이미 삭제된 초안은 성공으로 처리합니다. 게시된 문서는 변경하지 않습니다.',
+        inputSchema: { type: 'object', properties: {
+            key: { type: 'string', description: '목록에서 받은 초안 key' },
+            expected_revision: { type: 'string', description: '가장 최근 읽기·저장 응답의 revision' },
+        }, required: ['key', 'expected_revision'] },
+    },
     {
         name: 'save_personal_draft',
         description: '본문을 비공개 개인 초안으로 저장합니다. 마이페이지 ‘내 초안’에서 불러와 이어 쓸 수 있으며 문서를 게시하거나 승인 대기로 제출하지 않습니다. 일반 사용자·토론관리자는 문서·섹션을 합해 4개까지 보관하며, 새 초안 저장 시 마지막 저장이 가장 오래된 초안을 자동 삭제합니다. 관리자는 제한이 없습니다. 기존 초안은 read_personal_draft의 revision을 expected_revision으로 보내야 수정할 수 있습니다. 응답의 removedKeys는 자동 삭제된 초안입니다.',
@@ -42,6 +50,9 @@ export async function dispatchPersonalDraftTool(c: Context<Env>, name: string, a
     } else if (name === 'read_personal_draft') {
         if (typeof args.key !== 'string') return toolError('초안 key가 필요합니다.');
         response = await readEditorDraft(c, args.key);
+    } else if (name === 'delete_personal_draft') {
+        if (typeof args.key !== 'string') return toolError('초안 key가 필요합니다.');
+        response = await deleteEditorDraft(c, args.key, JSON.stringify({ expectedRevision: args.expected_revision }));
     } else if (name === 'save_personal_draft') {
         if (typeof args.title !== 'string') return toolError('문서 슬러그가 필요합니다.');
         const slug = normalizeSlug(args.title);
@@ -54,7 +65,7 @@ export async function dispatchPersonalDraftTool(c: Context<Env>, name: string, a
         return null;
     }
     c.header('Cache-Control', 'no-store');
-    const data = await response.json();
+    const data = response.status === 204 ? { deleted: true } : await response.json();
     return { content: [{ type: 'text', text: JSON.stringify(data) }], isError: !response.ok };
 }
 

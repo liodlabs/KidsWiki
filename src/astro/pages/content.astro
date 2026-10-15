@@ -1,0 +1,55 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+---
+<BaseLayout pagePath="/content.html" title="내 문서 관리 - KidsWiki">
+    <Fragment slot="head">
+        <link rel="stylesheet" href="/css/content.css" />
+        <script is:inline>try{var t=localStorage.getItem('themeMode');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+    </Fragment>
+    <Header />
+    <main id="main-content" class="content-manager" tabindex="-1">
+        <header class="content-intro">
+            <div>
+                <p class="content-eyebrow">내가 쓰고, 검토하고, 발행한 문서</p>
+                <h1>내 문서 관리</h1>
+                <p>작성 중인 초안을 제출하고, 내용을 검토한 뒤 발행하세요.</p>
+            </div>
+            <a class="btn btn-wiki-outline" href="/mypage#editor-drafts">개인 저장 초안 <i class="mdi mdi-arrow-top-right" aria-hidden="true"></i></a>
+        </header>
+        <ol class="content-steps" aria-label="문서 발행 순서">
+            <li><span>1</span><div><strong>작성 중 초안</strong><p>아직 공개되지 않은 편집 내용</p></div></li>
+            <li><span>2</span><div><strong>제출안</strong><p>내용을 검토하고 발행을 결정</p></div></li>
+            <li><span>3</span><div><strong>발행됨</strong><p>위키에 반영된 내 문서</p></div></li>
+        </ol>
+        <nav class="content-tabs" aria-label="문서 상태">
+            <a href="#draft" id="stage-draft" aria-current="page">작성 중 초안</a>
+            <a href="#submitted" id="stage-submitted">제출안</a>
+            <a href="#published" id="stage-published">발행됨</a>
+        </nav>
+        <section class="content-panel" aria-labelledby="content-heading">
+            <div class="content-toolbar">
+                <div><h2 id="content-heading">작성 중 초안</h2><p id="stage-description">아직 제출하지 않은 편집 초안입니다. 내용을 검토한 뒤 제출하세요.</p></div>
+                <button type="button" class="btn btn-wiki-outline" id="refresh-content"><i class="mdi mdi-refresh" aria-hidden="true"></i> 새로고침</button>
+            </div>
+            <p id="content-status" role="status" aria-live="polite">목록을 불러오는 중입니다.</p>
+            <div id="content-list" class="content-list" aria-busy="true"></div>
+            <button type="button" class="btn btn-wiki-outline content-more" id="load-more-content" hidden>더 보기</button>
+        </section>
+    </main>
+    <Footer />
+    <dialog id="content-review" aria-labelledby="review-heading" class="content-review">
+        <form method="dialog" class="content-review-header"><h2 id="review-heading">초안 검토</h2><button class="btn btn-wiki-outline" aria-label="검토 닫기">닫기</button></form>
+        <div id="review-notice" role="status"></div>
+        <div id="review-bodies" class="review-bodies"></div>
+        <label for="review-summary">편집 요약 <span class="text-muted">(선택)</span></label>
+        <input id="review-summary" class="form-control" maxlength="255" autocomplete="off" />
+        <p id="review-error" role="alert"></p>
+        <div class="review-actions"><button type="button" class="btn btn-wiki" id="review-confirm">제출하기</button></div>
+    </dialog>
+    <Fragment slot="scripts">
+        <script type="module" src="/dist/common.js" is:inline></script>
+        <script type="module" src="/dist/content.js" is:inline></script>
+    </Fragment>
+</BaseLayout>

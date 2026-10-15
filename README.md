@@ -64,7 +64,7 @@ Cloudflare 프리티어만으로 돌아가는 서버리스 위키입니다. 마�
 
 ### API 토큰으로 내 초안 사용
 
-마이페이지에서 발급한 API 키를 `Authorization: Bearer <API 키>`로 보내면 같은 계정의 **내 초안**을 저장·조회·수정·삭제할 수 있습니다. API와 브라우저가 같은 초안을 사용하므로 일반 유저·토론 관리자의 4개 보관 한도도 합산합니다. 토큰을 명시하면 쿠키보다 토큰 소유자를 우선하며, 만료·폐기·차단·탈퇴한 토큰은 거부합니다. 이 인증은 개인 초안 API에만 추가되며 다른 계정 관리 API에는 적용되지 않습니다.
+마이페이지에서 발급한 API 키를 `Authorization: Bearer <API 키>`로 보내면 같은 계정의 **내 초안**을 저장·조회·수정·삭제할 수 있습니다. API와 브라우저가 같은 초안을 사용하므로 일반 유저·토론 관리자의 4개 보관 한도도 합산합니다. 토큰을 명시하면 쿠키보다 토큰 소유자를 우선하며, 만료·폐기·차단·탈퇴한 토큰은 거부합니다. 이 인증은 개인 초안 API와 MCP 제출안 API에서 지원하며 다른 계정 관리 API에는 적용되지 않습니다.
 
 | 요청 | 동작 |
 | --- | --- |
@@ -88,9 +88,51 @@ Cloudflare 프리티어만으로 돌아가는 서버리스 위키입니다. 마�
 
 저장 응답의 `draft.revision`은 다음 수정에 사용하고, `removedKeys`는 보관 한도로 자동 삭제된 초안 목록입니다. 본인의 `user_id`나 작성 시각을 지정할 수는 없습니다.
 
-MCP에서도 `save_personal_draft`, `list_personal_drafts`, `read_personal_draft` 도구로 같은 초안을 다룹니다. 저장 도구는 `title`, `content`, `base_version`, `base_content`, `expected_revision`을 받으며 선택적으로 `section_index`·`section_heading`을 지정합니다. 본문 읽기는 목록에서 받은 `key`를 사용합니다. 일반 기여자도 개인 초안을 저장할 수 있지만 직접 게시 권한은 달라지지 않습니다. 기존 `create_or_update_page`·`list_drafts`는 승인용 MCP 편집안을 계속 다루며 개인 초안과 섞지 않습니다. MCP 도구는 `MCP_MODE`가 활성화된 경우에만 제공됩니다.
+MCP에서도 `save_personal_draft`, `list_personal_drafts`, `read_personal_draft`, `delete_personal_draft` 도구로 같은 초안을 다룹니다. 저장 도구는 `title`, `content`, `base_version`, `base_content`, `expected_revision`을 받으며 선택적으로 `section_index`·`section_heading`을 지정합니다. 본문 읽기는 목록에서 받은 `key`를 사용합니다. 삭제 도구는 읽기 응답의 `key`와 `revision`을 각각 `key`, `expected_revision`으로 받으며, 다른 기기에서 수정된 초안은 충돌로 거부합니다. 이미 삭제된 초안은 성공으로 처리하고, 타인의 초안에는 영향을 주지 않습니다. 일반 기여자도 개인 초안을 저장·삭제할 수 있지만 직접 게시 권한은 달라지지 않습니다. 기존 `create_or_update_page`·`list_drafts`는 승인용 MCP 편집안을 계속 다루며 개인 초안과 섞지 않습니다. MCP 도구는 `MCP_MODE`가 활성화된 경우에만 제공됩니다.
 
 연결 검증: `node --test scripts/personal-drafts-api.test.mjs`. 추가 DB 마이그레이션은 없습니다.
+
+## MCP 제출안 조회·발행 승인 API
+
+마이페이지에서 발급한 API 키 또는 MCP OAuth 액세스 토큰을 `Authorization: Bearer <토큰>`으로 보내면 본인 승인 대기 제출안을 조회·승인·거절할 수 있습니다. 기존 브라우저 로그인 세션도 지원합니다. 토큰을 명시하면 쿠키 대신 토큰 소유자로 처리하며, 잘못된·만료된·폐기된 토큰이나 차단·탈퇴 계정은 거부합니다. 응답은 캐시하지 않습니다.
+
+- `GET /api/mcp-submissions`: 본인 승인 대기 제출안 목록과 충돌 여부. `limit`(기본 100, 최대 100)·`offset`으로 페이지를 조회하며 `nextOffset: null`이면 마지막 목록
+- `GET /api/mcp-submissions/:id`: 제안 본문·현재 본문·병합 기준본 조회
+- `POST /api/mcp-submissions/:id/approve`: 제출안을 승인하여 실제 문서에 반영
+- `POST /api/mcp-submissions/:id/reject`: 제출안과 관련 알림을 폐기
+
+POST 요청은 `Content-Type: application/json`으로 보냅니다. 승인 본문은 `{}` 또는 `{"summary":"검토 후 발행"}`이며, `summary`를 생략하면 제출 시 요약을 사용하고 빈 문자열이면 요약을 비웁니다. 거절 본문은 `{}`입니다. 타인의 제출안과 아직 제출하지 않은 draft는 404, 권한 부족은 403, 문서 충돌은 409입니다. 승인은 기존 웹과 동일한 편집 권한·신뢰 기여자 정책·문서 ACL·충돌 검사를 거치며 새 리비전을 생성합니다(편집 메모만 바꾸는 경우는 본문 버전을 올리지 않고 가상 리비전으로 기록).
+
+MCP에서는 `list_submissions`, `read_submission`, `approve_submission`, `reject_submission`을 사용합니다. 목록 외 도구는 `draft_id`가 필요하며 승인 도구는 선택적으로 `summary`를 받습니다. 직접 게시 권한이 있는 기여자·관리자에게 노출되고, **‘승인 없이 즉시 적용’ 설정을 켤 필요는 없습니다.** 개인 저장 초안(`editor_drafts`)을 발행하는 도구와는 별개입니다. 승인 대기 제출안의 삭제는 `reject_submission` 또는 REST `/reject`로 처리하며, 작성 중 MCP 초안은 기존 `discard_edit`로 삭제합니다. 개인 저장 초안은 `delete_personal_draft` 또는 기존 `DELETE /api/editor-drafts/:key`로 삭제합니다. 모든 삭제는 본인 API 키로 인증할 수 있습니다.
+
+`commit_edit`는 계속 승인 대기로만 제출합니다. 먼저 `read_submission`으로 내용을 검토하고 사용자가 해당 편집안의 발행을 명시적으로 요청했을 때 `approve_submission`을 호출합니다. 제출 직후 자동 승인하지 않습니다. `apply_edit`와 `revert_page`는 기존처럼 즉시 적용 설정을 켜야 노출됩니다. 기존 MCP 클라이언트가 도구 목록을 캐시했다면 연결을 새로 고치거나 재연결해 목록을 갱신하세요.
+
+검증: `node --test scripts/mcp-submissions-api.test.mjs scripts/mcp-instant-apply.test.mjs scripts/personal-drafts-api.test.mjs`. 추가 DB 마이그레이션은 없습니다.
+
+## 내 문서 관리
+
+로그인 후 계정 메뉴 또는 마이페이지의 **내 문서 관리**에서 `/content`로 이동합니다. 상태별 목록은 다음과 같습니다.
+
+- **작성 중 초안** (`/content#draft`): MCP 편집 초안의 원문 검토·제출·삭제. 제출하기는 승인 대기로만 옮기며 실제 문서를 바꾸지 않습니다.
+- **제출안** (`/content#submitted`): 현재 문서와 제안 본문 비교·발행·삭제. 충돌 시 발행을 막고 에디터의 검토·병합 화면으로 안내합니다.
+- **발행됨** (`/content#published`): 내가 발행한 이력이 있는 현재 문서를 문서당 한 번 표시합니다. 이후 타인의 편집이 있어도 남고, 내 발행 뒤 변경 여부를 표시합니다. 현재 권한으로 볼 수 없는 비공개 문서·삭제된 문서는 제외합니다. 문서 보기·편집 링크를 제공하며, 문서 삭제는 기존 `wiki:delete` 권한이 있어야 가능합니다. 삭제는 다른 편집자의 내용도 포함해 문서 전체를 숨기는 소프트 삭제이고 이력은 보존합니다.
+
+개인 저장 초안(`editor_drafts`)은 마이페이지의 **내 초안**을 계속 사용하며 관리 페이지에서 바로 이동할 수 있습니다. 웹과 API/MCP는 같은 초안·제출안·발행 이력을 사용하고 모든 목록은 페이지를 나누어 조회할 수 있습니다.
+
+API 키 또는 MCP OAuth 토큰으로 다음 REST API도 사용할 수 있습니다. 브라우저 로그인 쿠키도 지원합니다.
+
+- `GET /api/mcp-drafts?status=draft&limit=20&offset=0`: 작성 중 초안 목록. `status`는 `draft`(기본)·`pending_approval`·`all`; 응답은 `{drafts, nextOffset}`
+- `GET /api/mcp-drafts/:id`: 본인 초안 원문 조회
+- `POST /api/mcp-drafts/:id/submit`: `{}` 또는 `{"summary":"제출 요약"}`으로 제출. 기존 게시 권한·신뢰 기여자 정책을 검사
+- `DELETE /api/mcp-drafts/:id`: 본인 MCP 초안·관련 알림 삭제. 발행된 문서는 변경하지 않음
+- `GET /api/published-pages?limit=20&offset=0`: 내 발행 문서 목록. 응답은 `{pages, nextOffset, canDelete}`
+- `DELETE /api/published-pages/:slug`: 내 발행 이력이 있는 문서의 소프트 삭제. 기존 문서 삭제 권한과 ACL 적용
+
+`limit`은 1–100, `offset`은 0 이상의 정수입니다. `nextOffset`이 있으면 다음 요청의 `offset`으로 사용합니다. 초안 목록은 마지막 페이지가 꽉 차면 다음 요청에서 빈 목록이 올 수 있습니다. 쓰기 요청은 `Content-Type: application/json`으로 보냅니다.
+
+MCP의 `list_drafts`도 `status`·`limit`·`offset`을 지원하며 기본 응답 형식(초안 배열)은 유지합니다. `read_draft`·`commit_edit`·`discard_edit`로 원문 조회·제출·삭제하고, 제출안은 `list_submissions`·`read_submission`·`approve_submission`·`reject_submission`으로 처리합니다. `list_submissions`는 `limit`·`offset`을 지원합니다. 새 `list_published_pages`로 내 발행 문서를 조회하고 관리자 전용 `delete_page`로 삭제합니다. 즉시 적용 설정과는 별개입니다.
+
+기존 배포 설정의 `[assets].run_worker_first`가 경로 배열이면 `/content`를 추가하세요(새 예제에는 포함되어 있습니다). 추가 DB 마이그레이션은 없습니다.
 
 ## 라이선스
 

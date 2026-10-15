@@ -3499,7 +3499,7 @@ async function loadMcpSubmissionIntoEditor(submissionId: number): Promise<boolea
             title: '제출안 제목 불일치',
             text: `제출안의 문서(${detail.slug ?? '?'}) 가 현재 편집 중인 문서(${slug ?? '?'}) 와 다릅니다. 해당 문서로 이동해 다시 시도하세요.`,
         });
-        window.location.href = '/mypage#mcp-submissions';
+        window.location.href = '/content#submitted';
         return false;
     }
 
@@ -3516,7 +3516,7 @@ async function loadMcpSubmissionIntoEditor(submissionId: number): Promise<boolea
                         ? '동일 제목의 소프트 삭제된 문서가 존재합니다. 관리자가 먼저 처리해야 합니다.'
                         : '에디터에서 해결할 수 없는 충돌입니다.',
         });
-        window.location.href = '/mypage#mcp-submissions';
+        window.location.href = '/content#submitted';
         return false;
     }
 

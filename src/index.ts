@@ -24,6 +24,7 @@ import ticketRoutes from './routes/ticket';
 import mcpRoutes from './routes/mcp';
 import mcpSubmissionsRoutes from './routes/mcp-submissions';
 import editorDraftRoutes from './routes/editor-drafts';
+import contentWorkflowRoutes from './routes/content-workflow';
 import pendingEditsRoutes from './routes/pending-edits';
 import oauthRoutes from './routes/oauth';
 import analyticsRoutes from './routes/analytics';
@@ -162,6 +163,7 @@ app.route('/api/mcp', mcpRoutes);
 app.route('/api', mcpSubmissionsRoutes);
 app.route('/api', pendingEditsRoutes);
 app.route('/api', editorDraftRoutes);
+app.route('/api', contentWorkflowRoutes);
 app.route('/', oauthRoutes); // /.well-known/* + /oauth/*
 app.route('/api/admin/analytics', analyticsRoutes);
 app.route('/api', blogRoutes);
@@ -981,6 +983,11 @@ app.get('/admin-bulk-manage', async (c) => {
         return c.redirect('/');
     }
     return fetchAssetHtml(c, '/admin-bulk-manage.html');
+});
+
+app.get('/content', async c => {
+    if (!c.get('user')) return c.redirect('/login?redirect=%2Fcontent');
+    return fetchAssetHtml(c, '/content.html');
 });
 
 // /mypage 접근 시 mypage.html 서빙 (SSR 브랜딩)

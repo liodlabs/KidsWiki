@@ -158,8 +158,12 @@ export const USER_READ_TOOL_DEFS: McpToolDef[] = [
     },
     {
         name: 'list_drafts',
-        description: '본인이 보유한 진행 중 draft 목록을 반환합니다. 각 항목에는 draft_id, slug, action(create/update), base_revision_id, base_version, content_length, updated_at(ISO 8601) 이 포함됩니다. draft 는 마지막 활동 이후 12시간이 지나면 자동 삭제됩니다.',
-        inputSchema: { type: 'object', properties: {}, required: [] }
+        description: '본인 MCP 초안 목록을 조회합니다. status=draft는 작성 중, pending_approval는 제출안, all(기본)은 모두 반환합니다. limit(기본 100, 최대 100)·offset으로 나눠 조회할 수 있습니다. 작성 중 초안은 마지막 활동 후 12시간, 제출안은 제출 후 7일이 지나면 정리됩니다.',
+        inputSchema: { type: 'object', properties: {
+            status: { type: 'string', enum: ['draft', 'pending_approval', 'all'] },
+            limit: { type: 'integer', minimum: 1, maximum: 100 },
+            offset: { type: 'integer', minimum: 0 },
+        }, required: [] }
     },
     {
         name: 'read_draft',
@@ -205,7 +209,7 @@ const HEADING_RULE_NOTE =
 export const USER_EDIT_TOOL_DEFS: McpToolDef[] = [
     {
         name: 'create_or_update_page',
-        description: '위키 문서 전체 본문을 새로 만들거나 통째로 교체할 draft 를 생성합니다. ⚠️ 즉시 저장하지 않고 draft 에 누적되며, 완료 후 commit_edit(draft_id, summary) 를 호출해야 새 리비전이 생성됩니다. 이미 본인의 draft 가 같은 슬러그로 있으면 그 draft 의 본문이 이 호출의 content 로 교체됩니다. create_only=true 면 페이지가 이미 존재할 때 오류를 반환합니다 (실수 덮어쓰기 방지).\n\n응답에 draft_id 가 포함되며, 이 id 로 read_draft / commit_edit / discard_edit 를 호출합니다. draft 는 마지막 활동 이후 12시간이 지나면 자동 삭제됩니다.' + HEADING_RULE_NOTE,
+        description: '위키 문서 전체 본문을 새로 만들거나 통째로 교체할 draft 를 생성합니다. ⚠️ 즉시 저장하지 않고 draft 에 누적되며, 완료 후 commit_edit(draft_id, summary) 로 승인 대기에 제출하고, 웹 또는 approve_submission으로 승인해야 새 리비전이 생성됩니다. 이미 본인의 draft 가 같은 슬러그로 있으면 그 draft 의 본문이 이 호출의 content 로 교체됩니다. create_only=true 면 페이지가 이미 존재할 때 오류를 반환합니다 (실수 덮어쓰기 방지).\n\n응답에 draft_id 가 포함되며, 이 id 로 read_draft / commit_edit / discard_edit 를 호출합니다. draft 는 마지막 활동 이후 12시간이 지나면 자동 삭제됩니다.' + HEADING_RULE_NOTE,
         inputSchema: {
             type: 'object',
             properties: {
@@ -248,7 +252,7 @@ export const USER_EDIT_TOOL_DEFS: McpToolDef[] = [
     },
     {
         name: 'commit_edit',
-        description: 'draft 에 누적된 편집을 승인 대기로 제출합니다. base_revision_id 가 그 사이 변경되었으면(=다른 사용자가 페이지를 수정) 거부합니다 — 그 경우 discard_edit 후 read_document 로 최신 상태를 다시 읽고 편집을 재구성해야 합니다. 신규 페이지 draft 인데 commit 시점에 이미 같은 슬러그가 존재하면 같은 사유로 거부합니다. summary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 `[+N줄 -M줄]` 변경량 표시가 자동으로 붙습니다 (예: `[+5줄 -2줄] 오타 수정`).\n\n응답에도 이전 본문 대비 라인 단위 변경량(`lines_added` / `lines_removed`)이 포함됩니다 — git diff --stat 의 +N/-M 와 동일한 의미입니다 (CRLF 정규화 후 LCS 기반으로 산출).\n\n**항상 승인 대기로 제출**됩니다. draft 는 즉시 리비전이 되지 않고 OAuth 토큰 소유자(=이 MCP 를 연결한 본인) 에게 승인 대기로 제출됩니다. 본인이 마이페이지 / 알림 / 문서 배너에서 검토 후 승인해야 비로소 리비전이 만들어집니다. 거부 시 draft 는 폐기됩니다.\n\n승인 단계 없이 즉시 반영하려면(마이페이지에서 "승인 없는 즉시 반영 도구 허용" 을 켠 경우) commit_edit 대신 apply_edit 도구를 사용하세요 — 도구 목록에 apply_edit 이 보이면 활성 상태입니다.',
+        description: 'draft 에 누적된 편집을 승인 대기로 제출합니다. base_revision_id 가 그 사이 변경되었으면(=다른 사용자가 페이지를 수정) 거부합니다 — 그 경우 discard_edit 후 read_document 로 최신 상태를 다시 읽고 편집을 재구성해야 합니다. 신규 페이지 draft 인데 commit 시점에 이미 같은 슬러그가 존재하면 같은 사유로 거부합니다. summary 는 새 리비전의 편집 요약입니다 (선택, 최대 255자). 저장 시 `[+N줄 -M줄]` 변경량 표시가 자동으로 붙습니다 (예: `[+5줄 -2줄] 오타 수정`).\n\n응답에도 이전 본문 대비 라인 단위 변경량(`lines_added` / `lines_removed`)이 포함됩니다 — git diff --stat 의 +N/-M 와 동일한 의미입니다 (CRLF 정규화 후 LCS 기반으로 산출).\n\n**항상 승인 대기로 제출**됩니다. draft 는 즉시 리비전이 되지 않고 OAuth 토큰 소유자(=이 MCP 를 연결한 본인) 에게 승인 대기로 제출됩니다. 본인이 마이페이지에서 승인하거나, read_submission으로 검토한 뒤 사용자의 명시적 발행 요청에 따라 approve_submission을 호출해야 리비전이 만들어집니다. commit_edit 직후 자동 승인하지 마세요. 거부 시 draft 는 폐기됩니다.\n\n승인 단계 없이 즉시 반영하려면(마이페이지에서 "승인 없는 즉시 반영 도구 허용" 을 켠 경우) commit_edit 대신 apply_edit 도구를 사용하세요 — 도구 목록에 apply_edit 이 보이면 활성 상태입니다.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -456,11 +460,21 @@ export async function dispatchAdminReadTool(c: Context<Env>, user: User, toolNam
         if (!rbac.can(user.role, 'wiki:edit')) {
             return asTextResult('Error: wiki:edit 권한이 필요합니다.', true);
         }
+        const status = args.status ?? 'all';
+        const limit = args.limit ?? 100, offset = args.offset ?? 0;
+        if (!['draft', 'pending_approval', 'all'].includes(status)
+            || !Number.isSafeInteger(limit) || limit < 1 || limit > 100
+            || !Number.isSafeInteger(offset) || offset < 0) {
+            return asTextResult('Error: 목록 조건이 올바르지 않습니다.', true);
+        }
+        const statusFilter = status === 'draft' ? 'AND submitted_at IS NULL'
+            : status === 'pending_approval' ? 'AND submitted_at IS NOT NULL' : '';
         const { results } = await db.prepare(`
             SELECT id, slug, action, base_revision_id, base_version,
                    length(content) AS content_length, updated_at, submitted_at, submitted_summary
-            FROM mcp_drafts WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100
-        `).bind(user.id).all<{
+            FROM mcp_drafts WHERE user_id = ? ${statusFilter}
+            ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?
+        `).bind(user.id, limit, offset).all<{
             id: number; slug: string; action: string; base_revision_id: number | null;
             base_version: number; content_length: number; updated_at: number;
             submitted_at: number | null; submitted_summary: string | null;
@@ -886,13 +900,13 @@ const DRAFT_FIRST_ISSUE_NOTE =
     '사용법:\n' +
     '  1) 이어서 같은 title 로 patch_page / edit_section / create_or_update_page 를 호출하면 이 draft 에 누적됩니다 (사용자×슬러그당 1개).\n' +
     '  2) read_draft(title) 로 진행 중 본문 확인.\n' +
-    '  3) 편집이 끝나면 commit_edit(draft_id, summary) 로 1개 리비전을 만들어 저장하세요.\n' +
+    '  3) 편집이 끝나면 commit_edit(draft_id, summary) 로 승인 대기에 제출하세요. read_submission으로 검토하고 사용자가 발행을 요청하면 approve_submission(draft_id)으로 승인합니다.\n' +
     '  4) 폐기하려면 discard_edit(draft_id).\n' +
     '  5) 마지막 활동 이후 12시간이 지나면 자정 크론이 자동 삭제합니다.\n' +
     '  6) commit 시점에 base_revision_id 가 변하면(=다른 사용자가 페이지 수정) conflict 로 거부됩니다 — discard 후 read_document 로 최신을 다시 읽어 재구성하세요.';
 
 const DRAFT_UPDATE_NOTE =
-    'draft 가 갱신되었습니다. commit_edit(draft_id, summary) 로 저장하거나 discard_edit(draft_id) 로 폐기하세요.';
+    'draft 가 갱신되었습니다. commit_edit(draft_id, summary) 로 승인 대기에 제출하거나 discard_edit(draft_id) 로 폐기하세요.';
 
 // (user_id, slug) 의 draft 를 조회하고, 없으면 페이지에서 현재 본문을 스냅샷해 새 draft 를 생성한다.
 // 호출자는 slug 가 admin-mcp 로 편집 가능한지(이미지: 네임스페이스 거부 등)를 이미 확인했다고 가정한다.
@@ -947,7 +961,7 @@ async function loadDraftOrSeedFromPage(
 
 // commit_edit(submit_for_approval=true) 가 호출된 draft 를 "승인 대기" 로 마크하고
 // OAuth 토큰 소유자(=draft.user_id) 에게 알림을 발송한다.
-// 알림 link 는 /mypage#mcp-submissions 로, ref_id 는 draft.id 로 둔다 — 승인/거부 시 같은
+// 알림 link 는 /content#submitted 로, ref_id 는 draft.id 로 둔다 — 승인/거부 시 같은
 // ref_id 로 알림을 정리할 수 있도록 정렬한다. submitted_summary 에는 AI 가 제안한 요약을 저장하고,
 // 승인 시점에 유저가 그대로 채택하거나 본인이 다시 작성할 수 있다.
 //
@@ -984,12 +998,12 @@ async function markDraftSubmittedAndNotify(
             userId: ownerRow.user_id,
             type: 'mcp_submission',
             content: notifContent,
-            link: '/mypage#mcp-submissions',
+            link: '/content#submitted',
             refId: draftId,
             push: {
                 title: 'MCP 편집안 제출',
                 body: notifContent,
-                url: '/mypage#mcp-submissions',
+                url: '/content#submitted',
                 tag: `mcp_submission:${draftId}`,
             },
         });
@@ -1117,7 +1131,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
             'SELECT id, action, base_revision_id, base_version, submitted_at FROM mcp_drafts WHERE user_id = ? AND slug = ?'
         ).bind(user.id, slug).first<{ id: number; action: string; base_revision_id: number | null; base_version: number; submitted_at: number | null }>();
         if (existingDraft && existingDraft.submitted_at !== null) {
-            return asTextResult('Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 사용자가 mypage 에서 승인/거부할 때까지 수정할 수 없습니다. 폐기하려면 discard_edit 를 사용하세요.', true);
+            return asTextResult('Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 마이페이지 또는 approve_submission / reject_submission으로 처리할 때까지 수정할 수 없습니다. 폐기하려면 discard_edit 를 사용하세요.', true);
         }
 
         // draft 단계의 title 저장: hasTitleChange 가 true 일 때만 적용. (false 면 commit 시점에 페이지 기존 title 유지)
@@ -1206,7 +1220,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
             return asTextResult('Error: 문서를 찾을 수 없거나 삭제된 상태입니다. 새 페이지는 create_or_update_page 로 시작하세요.', true);
         }
         if (loaded.type === 'submitted') {
-            return asTextResult('Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 사용자가 mypage 에서 승인/거부할 때까지 수정할 수 없습니다. 폐기하려면 discard_edit 를 사용하세요.', true);
+            return asTextResult('Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 마이페이지 또는 approve_submission / reject_submission으로 처리할 때까지 수정할 수 없습니다. 폐기하려면 discard_edit 를 사용하세요.', true);
         }
         // edit_acl 검사 — 기존 페이지가 있을 때만. draft 만 있는 케이스도 일치하는 페이지를 다시 조회한다.
         {
@@ -1314,7 +1328,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
             return asTextResult('Error: 문서를 찾을 수 없거나 삭제된 상태입니다. 새 페이지는 create_or_update_page 로 시작하세요.', true);
         }
         if (loaded.type === 'submitted') {
-            return asTextResult('Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 사용자가 mypage 에서 승인/거부할 때까지 수정할 수 없습니다. 폐기하려면 discard_edit 를 사용하세요.', true);
+            return asTextResult('Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 마이페이지 또는 approve_submission / reject_submission으로 처리할 때까지 수정할 수 없습니다. 폐기하려면 discard_edit 를 사용하세요.', true);
         }
         // edit_acl 검사 — 기존 페이지가 있을 때만 (draft 만 있는 케이스도 일치 페이지 재조회).
         {
@@ -1408,7 +1422,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
         // 다시 편집하려면 사람이 거부(reject) 하거나 AI 가 discard_edit 후 새로 시작.
         if (draft.submitted_at !== null) {
             return asTextResult(
-                'Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 사용자가 mypage 에서 승인/거부할 때까지 변경할 수 없습니다. 폐기하려면 discard_edit 를 사용하세요.',
+                'Error: 이 draft 는 이미 승인 대기로 제출된 상태입니다. 마이페이지 또는 approve_submission / reject_submission으로 처리할 때까지 변경할 수 없습니다. 폐기하려면 discard_edit 를 사용하세요.',
                 true
             );
         }
@@ -1503,7 +1517,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
                 base_revision_id: draft.base_revision_id,
                 base_version: draft.base_version,
                 ...(diffStats ? { lines_added: diffStats.added, lines_removed: diffStats.removed } : {}),
-                notice: '승인 대기로 제출되었습니다. /mypage#mcp-submissions 에서 검토 후 승인하면 비로소 리비전이 생성됩니다.',
+                notice: '승인 대기로 제출되었습니다. read_submission으로 검토하고 사용자가 발행을 요청하면 approve_submission을 호출하세요. 웹에서는 /content#submitted 에서 승인할 수 있습니다.',
             }, null, 2));
         }
 
@@ -1579,7 +1593,7 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
                 draft_id: draft.id,
                 action: 'create',
                 ...(createDiffStats ? { lines_added: createDiffStats.added, lines_removed: createDiffStats.removed } : {}),
-                notice: '승인 대기로 제출되었습니다. /mypage#mcp-submissions 에서 검토 후 승인하면 비로소 새 페이지가 생성됩니다.',
+                notice: '승인 대기로 제출되었습니다. read_submission으로 검토하고 사용자가 발행을 요청하면 approve_submission을 호출하세요. 웹에서는 /content#submitted 에서 승인할 수 있습니다.',
             }, null, 2));
         }
 
@@ -2265,14 +2279,14 @@ export function buildUserEditInformationSuffix(userName: string, canInstantApply
     const editIntro = `\n\n## 편집 도구\n\n` +
         `**stateful draft 모델**: create_or_update_page / patch_page / edit_section 은 즉시 저장하지 않고 \`mcp_drafts\` 에 누적합니다 ` +
         `(같은 슬러그에 대해 사용자별 1개). 응답으로 \`draft_id\` 를 받고, 편집이 끝나면 commit_edit(draft_id, summary) 를 호출해 ` +
-        `승인 대기로 제출합니다 — 사용자가 /mypage#mcp-submissions 에서 승인해야 비로소 리비전이 생성됩니다. 시작 시점 이후 다른 사용자가 페이지를 수정했으면 commit_edit 가 충돌로 거부합니다 ` +
+        `승인 대기로 제출합니다 — 사용자가 /content#submitted 에서 승인하거나 명시적 발행 요청에 따라 approve_submission을 호출해야 리비전이 생성됩니다. 시작 시점 이후 다른 사용자가 페이지를 수정했으면 commit_edit 가 충돌로 거부합니다 ` +
         `(이 경우 discard_edit 후 read_document 로 최신 상태를 다시 읽고 편집을 재구성). draft 는 마지막 활동 이후 12시간이 지나면 자동 삭제됩니다.\n\n` +
         `**⚠️ 헤딩 작성 규칙**: 위키는 헤딩(##, ###, ...)에 자동으로 계층 번호("1.", "1.1." 등)를 부여합니다. ` +
         `헤딩 텍스트에 번호를 직접 적지 마세요 (예: \`## 1. 개요\` ❌ → \`## 개요\` ✅). 직접 적으면 렌더링 시 "1. 1. 개요" 처럼 중복 번호가 표시됩니다. ` +
         `목차 내 다른 섹션을 참조할 때는 \`[[문서#s-1.2]]\` 형식의 섹션 앵커를 사용하세요.\n\n` +
         `**항상 승인 대기로 제출**: commit_edit 를 호출하면 draft 는 즉시 리비전이 되지 않고 OAuth 토큰 소유자(=이 MCP 를 연결한 본인) 에게 승인 대기로 제출됩니다. ` +
-        `본인이 마이페이지 / 알림 / 문서 배너에서 검토 후 승인해야 비로소 리비전이 만들어집니다. 거부 시 draft 는 폐기됩니다. ` +
-        `승인 대기 상태 draft 는 list_drafts / read_draft 의 \`status\` 필드가 \`pending_approval\` 로 표시되며, AI 측에서는 더 이상 수정할 수 없습니다 (discard_edit 로 폐기만 가능).\n\n` +
+        `본인이 마이페이지에서 승인하거나, read_submission으로 검토한 뒤 사용자의 명시적 발행 요청에 따라 approve_submission을 호출해야 리비전이 만들어집니다. commit_edit 직후 자동 승인하지 마세요. 거부 시 draft 는 폐기됩니다. ` +
+        `승인 대기 상태 draft 는 list_drafts / read_draft 의 \`status\` 필드가 \`pending_approval\` 로 표시되며, AI 측에서는 더 이상 수정할 수 없습니다. list_submissions / read_submission으로 검토하고, 사용자의 명시적 요청에 따라 approve_submission으로 승인하거나 reject_submission으로 거절할 수 있습니다. 이 도구들은 즉시 적용 설정과 별개입니다.\n\n` +
         `${instantApplyIntro}\n\n` +
         editToolNames.map(name => `- ${name}`).join('\n');
     return `${readIntro}${editIntro}`;
