@@ -59,7 +59,7 @@ export async function listDraftKeys(prefix: string): Promise<string[]> {
     return result.drafts.map(draft => draft.key);
 }
 
-export async function writeDraft(key: string, payload: DraftPayload): Promise<DraftPayload> {
+export async function writeDraft(key: string, payload: DraftPayload, onRemoved?: (keys: string[]) => void): Promise<DraftPayload> {
     if (unconfirmed.has(key)) {
         const recovered = await recoverDraft(key);
         if (recovered && samePayload(recovered.payload, payload)) return recovered.payload;
@@ -68,13 +68,14 @@ export async function writeDraft(key: string, payload: DraftPayload): Promise<Dr
     const expectedRevision = revisions.get(key) ?? null;
     unconfirmed.set(key, { payload: { ...payload }, revision: expectedRevision });
     try {
-        const result = await request<{ draft: EditorDraft }>(endpoint(key), {
+        const result = await request<{ draft: EditorDraft; removedKeys?: string[] }>(endpoint(key), {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ payload, expectedRevision }),
         });
         if (!result) throw new Error('초안을 저장하지 못했습니다.');
         revisions.set(key, result.draft.revision);
         unconfirmed.delete(key);
+        if (result.removedKeys?.length) onRemoved?.(result.removedKeys);
         return result.draft.payload;
     } catch (error) {
         try {

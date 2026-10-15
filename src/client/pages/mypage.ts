@@ -16,6 +16,7 @@
 //     deleteDirectMessage / revokeSession / viewSentMessage)는 파일 끝에서 window.* 로 노출한다.
 
 import { renderUserAvatar } from '../utils/avatar';
+import type { EditorDraftSummary } from '../../shared/editorDraft';
 
         document.addEventListener('DOMContentLoaded', async () => {
             await Promise.all([window.loadConfig(), window.checkAuth()]);
@@ -24,6 +25,8 @@ import { renderUserAvatar } from '../utils/avatar';
                 return;
             }
             renderProfile();
+            loadEditorDrafts();
+            document.getElementById('refreshEditorDraftsBtn')?.addEventListener('click', loadEditorDrafts);
             loadContributions();
             loadWatches();
             loadNotificationsArchive();
@@ -46,6 +49,7 @@ import { renderUserAvatar } from '../utils/avatar';
             const hashScrollTargets = {
                 '#mcp-submissions': 'mcpSubmissionsSection',
                 '#notifications': 'notificationsArchiveSection',
+                '#drafts': 'editorDraftsSection',
             };
             const scrollSectionId = hashScrollTargets[window.location.hash];
             if (scrollSectionId) {
@@ -678,6 +682,93 @@ import { renderUserAvatar } from '../utils/avatar';
                 btn.disabled = false;
                 Swal.fire('오류', err.message, 'error');
             }
+        }
+
+        // ─── 내 초안 ────────────────────────────────────────────────────
+        async function loadEditorDrafts() {
+            const section = document.getElementById('editorDraftsSection');
+            const list = document.getElementById('editorDraftsList');
+            const count = document.getElementById('editorDraftsCount');
+            const refresh = document.getElementById('refreshEditorDraftsBtn');
+            if (!section || !list || !count || !refresh) return;
+            if (!['user', 'discussion_manager', 'admin', 'super_admin'].includes(window.currentUser?.role)) {
+                section.style.display = 'none';
+                return;
+            }
+            section.style.display = '';
+            refresh.disabled = true;
+            list.setAttribute('aria-busy', 'true');
+            try {
+                const res = await fetch('/api/editor-drafts/overview', { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+                if (!res.ok) throw new Error();
+                const { drafts, limit }: { drafts: EditorDraftSummary[]; limit: number | null } = await res.json();
+                count.textContent = limit === null ? `${drafts.length}개` : `${drafts.length} / ${limit}개`;
+                const notice = document.getElementById('editorDraftsLimitNotice');
+                if (notice) {
+                    notice.hidden = limit === null;
+                    notice.textContent = limit === null ? '' : `문서·섹션 초안을 합해 최대 ${limit}개까지 보관합니다. 새 초안 저장 시 마지막 저장 시각이 가장 오래된 초안부터 자동 삭제됩니다.`;
+                }
+                list.innerHTML = drafts.length ? drafts.map((draft, index) => {
+                    const params = new URLSearchParams({ slug: draft.slug });
+                    if (draft.sectionIndex !== undefined) {
+                        params.set('section', String(draft.sectionIndex));
+                        params.set('h', draft.sectionHeading || '');
+                    }
+                    const savedAt = new Date(draft.updatedAt);
+                    const scope = draft.sectionIndex === undefined ? '문서 전체'
+                        : `섹션: ${draft.sectionHeading || (draft.sectionIndex + 1) + '번째 섹션'}`;
+                    return `<div class="d-flex flex-column flex-sm-row justify-content-between gap-2 py-3 border-bottom">
+                        <div class="text-break">
+                            <strong>${window.escapeHtml(draft.slug)}</strong>
+                            <div class="small text-muted">${window.escapeHtml(scope)}</div>
+                            <time class="small text-muted" datetime="${savedAt.toISOString()}">저장: ${savedAt.toLocaleString('ko-KR')}</time>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                            <a class="btn btn-sm btn-wiki-outline" href="/edit?${window.escapeHtml(params.toString())}"
+                                aria-label="${window.escapeHtml(draft.slug)} ${window.escapeHtml(scope)} 초안 불러오기">불러오기</a>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-draft-index="${index}"
+                                aria-label="${window.escapeHtml(draft.slug)} ${window.escapeHtml(scope)} 초안 삭제">삭제</button>
+                        </div>
+                    </div>`;
+                }).join('') : '<p class="text-muted py-3 mb-0">저장된 초안이 없습니다. 문서 편집 화면에서 ‘초안 저장’을 눌러보세요.</p>';
+                list.querySelectorAll('[data-draft-index]').forEach(button => {
+                    button.addEventListener('click', () => deleteEditorDraft(drafts[Number(button.dataset.draftIndex)]));
+                });
+            } catch {
+                count.textContent = '—';
+                list.innerHTML = '<p class="text-danger py-3 mb-0">초안을 불러오지 못했습니다. 새로고침을 눌러 다시 시도해주세요.</p>';
+            } finally {
+                refresh.disabled = false;
+                list.removeAttribute('aria-busy');
+            }
+        }
+
+        async function deleteEditorDraft(draft: EditorDraftSummary) {
+            const result = await Swal.fire({
+                title: '초안 삭제',
+                text: `‘${draft.slug}’의 ${draft.sectionIndex === undefined ? '전체 문서' : '‘' + (draft.sectionHeading || (draft.sectionIndex + 1) + '번째') + '’ 섹션'} 초안을 삭제할까요?`,
+                icon: 'warning', showCancelButton: true, confirmButtonText: '삭제', cancelButtonText: '취소',
+                confirmButtonColor: '#cf222e', showLoaderOnConfirm: true,
+                allowOutsideClick: () => !Swal.isLoading(), allowEscapeKey: () => !Swal.isLoading(),
+                preConfirm: async () => {
+                    try {
+                        const res = await fetch('/api/editor-drafts/' + encodeURIComponent(draft.key), {
+                            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ expectedRevision: draft.revision }), signal: AbortSignal.timeout(15_000),
+                        });
+                        if (!res.ok) {
+                            const data = await res.json().catch(() => ({}));
+                            throw new Error(data.error || '초안을 삭제하지 못했습니다.');
+                        }
+                        return true;
+                    } catch (error) {
+                        Swal.showValidationMessage(error.message || '초안을 삭제하지 못했습니다. 다시 시도해주세요.');
+                        void loadEditorDrafts();
+                        return false;
+                    }
+                },
+            });
+            if (result.isConfirmed) await loadEditorDrafts();
         }
 
         // ─── MCP 편집 승인 대기 ──────────────────────────────────────────

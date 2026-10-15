@@ -15,24 +15,39 @@ class Statement {
 class TestD1 {
     constructor(db) { this.db = db; }
     prepare(sql) { return new Statement(this.db, sql); }
+    async batch(statements) {
+        this.db.exec('BEGIN');
+        try {
+            const results = statements.map(s => ({ results: this.db.prepare(s.sql).all(...s.values) }));
+            this.db.exec('COMMIT');
+            return results;
+        } catch (error) {
+            this.db.exec('ROLLBACK');
+            throw error;
+        }
+    }
 }
-let server, routes;
+let server, routes, RBAC;
 before(async () => {
     server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' });
     routes = (await server.ssrLoadModule('/src/routes/editor-drafts.ts')).default;
+    RBAC = (await server.ssrLoadModule('/src/utils/role.ts')).RBAC;
 });
 after(async () => { await server?.close(); });
 
-function fixture() {
+function fixture(role = 'user') {
     const sqlite = new DatabaseSync(':memory:');
     sqlite.exec('PRAGMA foreign_keys=ON');
     sqlite.exec(readFileSync(new URL('../migrations/schema.sql', import.meta.url), 'utf8'));
     for (const id of ['123456789ABCDEFGHJKLMN', '23456789ABCDEFGHJKLMNP']) sqlite.prepare("INSERT INTO users (id, provider, uid, name, role) VALUES (?, 'test', ?, ?, 'user')").run(id, id, id);
+    sqlite.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, '123456789ABCDEFGHJKLMN');
     const app = new Hono();
     app.use('*', async (c, next) => {
         const id = c.req.header('x-user');
-        if (id) c.set('user', { id: id === 'a' ? '123456789ABCDEFGHJKLMN' : '23456789ABCDEFGHJKLMNP', role: c.req.header('x-role') ?? 'user' });
-        c.set('rbac', { can: () => c.req.header('x-edit') !== 'no' });
+        if (id) c.set('user', { id: id === 'a' ? '123456789ABCDEFGHJKLMN' : '23456789ABCDEFGHJKLMNP', role: c.req.header('x-role') ?? (id === 'a' ? role : 'user') });
+        const rbac = new RBAC();
+        c.set('rbac', { can: (role, permission) => rbac.can(role, permission)
+            && (permission !== 'wiki:edit' || c.req.header('x-edit') !== 'no') });
         await next();
     });
     app.route('/api', routes);
@@ -40,13 +55,183 @@ function fixture() {
     const DB = new TestD1(sqlite);
     return { sqlite, app, request: (path, init = {}, user = 'a') => app.request(path, {
         ...init, headers: { 'content-type': 'application/json', ...(user ? { 'x-user': user } : {}), ...init.headers },
-    }, { DB }) };
+    }, { DB, SUPER_ADMIN_EMAILS: 'owner@example.com' }) };
 }
 const key = 'wiki_draft_문서/하위#section=0';
 const url = '/api/editor-drafts/' + encodeURIComponent(key);
 const payload = { content: '초안 본문', version: 3, base: '기준본', savedAt: 1, sectionIndex: 0, sectionHeading: '제목' };
 const put = (payload, expectedRevision = null) => ({ method: 'PUT', body: JSON.stringify({ payload, expectedRevision }) });
 const del = expectedRevision => ({ method: 'DELETE', body: JSON.stringify({ expectedRevision }) });
+const draftPath = name => '/api/editor-drafts/' + encodeURIComponent('wiki_draft_' + name);
+const ownerId = '123456789ABCDEFGHJKLMN';
+async function seedDrafts(request, sqlite, count = 4) {
+    const drafts = [];
+    for (let i = 0; i < count; i++) {
+        const res = await request(draftPath('보관' + i), put(payload));
+        assert.equal(res.status, 200);
+        drafts.push((await res.json()).draft);
+        sqlite.prepare('UPDATE editor_drafts SET updated_at = ? WHERE user_id = ? AND draft_key = ?')
+            .run(i + 1, ownerId, drafts.at(-1).key);
+    }
+    return drafts;
+}
+
+for (const role of ['user', 'discussion_manager']) {
+    test(`${role}: 다섯 번째 저장은 오래된 초안만 삭제하고 갱신·충돌·타인 초안은 보호한다`, async () => {
+        const { request, sqlite } = fixture(role);
+        try {
+            const drafts = await seedDrafts(request, sqlite);
+            await request(draftPath('보관0'), put(payload), 'b');
+            // 갱신한 최초 초안은 마지막 저장 시각이 바뀌어 보존된다.
+            const updated = await request(draftPath('보관0'), put(payload, drafts[0].revision));
+            assert.deepEqual((await updated.json()).removedKeys, []);
+            assert.equal((await request(draftPath('보관0'), put(payload))).status, 409);
+            assert.equal((await request(draftPath('보관0'), put(payload, drafts[0].revision))).status, 409);
+            assert.equal((await (await request('/api/editor-drafts/overview')).json()).drafts.length, 4);
+            // 섹션 초안도 개수에 포함하며 새로 저장한 사본을 반드시 남긴다.
+            const saved = await request(url, put(payload));
+            assert.equal(saved.status, 200);
+            assert.deepEqual((await saved.json()).removedKeys, [drafts[1].key]);
+            const overview = await (await request('/api/editor-drafts/overview')).json();
+            assert.equal(overview.limit, 4);
+            assert.equal(overview.drafts.length, 4);
+            assert.equal((await request(draftPath('보관0'), {}, 'b')).status, 200);
+            assert.equal((await request(url)).status, 200);
+        } finally { sqlite.close(); }
+    });
+}
+
+for (const role of ['admin', 'super_admin']) {
+    test(`${role}: 여러 초안을 제한 없이 보관한다`, async () => {
+        const { request, sqlite } = fixture(role);
+        try {
+            await seedDrafts(request, sqlite, 6);
+            const overview = await (await request('/api/editor-drafts/overview')).json();
+            assert.equal(overview.limit, null);
+            assert.equal(overview.drafts.length, 6);
+        } finally { sqlite.close(); }
+    });
+}
+
+test('세션이 오래되어도 현재 DB의 관리자 승격과 최고관리자 이메일을 적용한다', async () => {
+    const { request, sqlite } = fixture();
+    try {
+        await seedDrafts(request, sqlite);
+        sqlite.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(ownerId);
+        assert.deepEqual((await (await request(draftPath('승격후'), put(payload))).json()).removedKeys, []);
+        sqlite.prepare("UPDATE users SET role = 'user', email = 'owner@example.com' WHERE id = ?").run(ownerId);
+        assert.deepEqual((await (await request(draftPath('최고관리자'), put(payload))).json()).removedKeys, []);
+        assert.equal((await (await request('/api/editor-drafts/overview')).json()).drafts.length, 6);
+        sqlite.prepare("UPDATE users SET email = NULL, banned_until = ? WHERE id = ?")
+            .run(Math.floor(Date.now() / 1000) + 3600, ownerId);
+        assert.equal((await request(draftPath('차단후'), put(payload))).status, 403);
+    } finally { sqlite.close(); }
+});
+
+test('여러 새 초안이 동시에 저장되어도 마지막 4개만 남고 생성 충돌은 정리하지 않는다', async () => {
+    const { request, sqlite } = fixture();
+    try {
+        const responses = await Promise.all(Array.from({ length: 8 }, (_, i) => request(draftPath('동시' + i), put(payload))));
+        assert.ok(responses.every(res => res.status === 200));
+        const overview = await (await request('/api/editor-drafts/overview')).json();
+        assert.equal(overview.drafts.length, 4);
+        const results = await Promise.all([request(draftPath('같은키'), put(payload)), request(draftPath('같은키'), put(payload))]);
+        assert.deepEqual(results.map(res => res.status).sort(), [200, 409]);
+        assert.equal((await (await request('/api/editor-drafts/overview')).json()).drafts.length, 4);
+        assert.equal((await request(draftPath('같은키'))).status, 200);
+    } finally { sqlite.close(); }
+});
+
+test('정리 실패 시 새 저장까지 롤백하여 기존 초안을 모두 보존한다', async () => {
+    const { request, sqlite } = fixture();
+    try {
+        await seedDrafts(request, sqlite);
+        sqlite.exec("CREATE TRIGGER fail_draft_delete BEFORE DELETE ON editor_drafts BEGIN SELECT RAISE(ABORT, '정리 실패'); END");
+        assert.equal((await request(draftPath('실패'), put(payload))).status, 500);
+        assert.equal((await request(draftPath('실패'))).status, 404);
+        assert.equal((await (await request('/api/editor-drafts/overview')).json()).drafts.length, 4);
+    } finally { sqlite.close(); }
+});
+
+test('기존에 4개를 넘긴 사용자는 새 초안 저장 때만 정리한다', async () => {
+    const { request, sqlite } = fixture('admin');
+    try {
+        const drafts = await seedDrafts(request, sqlite, 6);
+        sqlite.prepare("UPDATE users SET role = 'user' WHERE id = ?").run(ownerId);
+        assert.equal((await (await request('/api/editor-drafts/overview')).json()).drafts.length, 6);
+        assert.equal((await request(draftPath('보관0'), put(payload, drafts[0].revision))).status, 200);
+        assert.equal((await (await request('/api/editor-drafts/overview')).json()).drafts.length, 6);
+        const saved = await (await request(draftPath('신규'), put(payload))).json();
+        assert.equal(saved.removedKeys.length, 3);
+        assert.equal((await (await request('/api/editor-drafts/overview')).json()).drafts.length, 4);
+    } finally { sqlite.close(); }
+});
+
+test('모든 활성 사용자는 내 초안 목록을 조회하고 비로그인·차단·탈퇴 계정은 거부한다', async () => {
+    const { request, sqlite } = fixture();
+    try {
+        await request(url, put(payload));
+        assert.equal((await request('/api/editor-drafts/overview', {}, null)).status, 401);
+        for (const role of ['banned', 'deleted']) {
+            assert.equal((await request('/api/editor-drafts/overview', { headers: { 'x-role': role } })).status, 403);
+        }
+        for (const role of ['user', 'discussion_manager', 'admin', 'super_admin']) {
+            const res = await request('/api/editor-drafts/overview', { headers: { 'x-role': role } });
+            assert.equal(res.status, 200);
+            assert.equal(res.headers.get('cache-control'), 'no-store');
+            assert.equal((await res.json()).drafts.length, 1);
+            const other = await request('/api/editor-drafts/overview', { headers: { 'x-role': role } }, 'b');
+            assert.deepEqual((await other.json()).drafts, []);
+        }
+        for (const role of ['user', 'discussion_manager']) {
+            assert.equal((await request('/api/editor-drafts', { headers: { 'x-role': role } })).status, 200);
+            assert.equal((await request(url, { headers: { 'x-role': role } })).status, 200);
+        }
+        assert.equal((await request('/api/public-probe', {}, null)).status, 200);
+    } finally { sqlite.close(); }
+});
+
+test('내 초안 목록은 여러 문서·섹션을 최신순으로 보여주고 본문·타인 초안을 노출하지 않는다', async () => {
+    const { request, sqlite } = fixture();
+    try {
+        const section = (await (await request(url, put(payload))).json()).draft;
+        const slug = '한글/문서 & <제목>#section=7';
+        const fullKey = 'wiki_draft_' + slug;
+        const fullPayload = { content: '전체 비공개 본문', base: '비공개 기준본', version: null, savedAt: null };
+        const full = (await (await request('/api/editor-drafts/' + encodeURIComponent(fullKey), put(fullPayload))).json()).draft;
+        await request(url, put({ ...payload, content: '다른 사용자 비공개 본문' }), 'b');
+        sqlite.prepare('UPDATE editor_drafts SET updated_at = ? WHERE user_id = ? AND draft_key = ?')
+            .run(1000, '123456789ABCDEFGHJKLMN', key);
+        sqlite.prepare('UPDATE editor_drafts SET updated_at = ? WHERE user_id = ? AND draft_key = ?')
+            .run(2000, '123456789ABCDEFGHJKLMN', fullKey);
+        const res = await request('/api/editor-drafts/overview', { headers: { 'x-role': 'admin' } });
+        const data = await res.json();
+        assert.deepEqual(data.drafts, [
+            { key: fullKey, revision: full.revision, slug, updatedAt: 2000 },
+            { key, revision: section.revision, slug: '문서/하위', updatedAt: 1000, sectionIndex: 0, sectionHeading: '제목' },
+        ]);
+        for (const text of [payload.content, payload.base, fullPayload.content, fullPayload.base, '다른 사용자 비공개 본문']) {
+            assert.equal(JSON.stringify(data).includes(text), false);
+        }
+        // 목록을 보는 것만으로 초안을 소비하거나 변경하지 않는다.
+        assert.equal((await (await request(url)).json()).draft.revision, section.revision);
+        assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM editor_drafts').get().n, 3);
+    } finally { sqlite.close(); }
+});
+
+test('목록을 본 뒤 다른 기기가 갱신한 초안은 오래된 목록에서 삭제할 수 없다', async () => {
+    const { request, sqlite } = fixture();
+    try {
+        const first = (await (await request(url, put(payload))).json()).draft;
+        const overview = await (await request('/api/editor-drafts/overview', { headers: { 'x-role': 'admin' } })).json();
+        const newer = (await (await request(url, put({ ...payload, content: '다른 기기 최신 본문' }, first.revision))).json()).draft;
+        assert.equal((await request(url, del(overview.drafts[0].revision))).status, 409);
+        assert.equal((await (await request(url)).json()).draft.payload.content, '다른 기기 최신 본문');
+        assert.equal((await request(url, del(newer.revision), 'b')).status, 204);
+        assert.equal((await request(url)).status, 200);
+        assert.equal((await request(url, del(newer.revision))).status, 204);
+    } finally { sqlite.close(); }
+});
 
 test('인증과 편집 권한을 적용하고 이후 공개 라우트는 보호하지 않는다', async () => {
     const { request, sqlite } = fixture();

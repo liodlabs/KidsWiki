@@ -25,6 +25,7 @@ import { captureDraftCleanup } from './drafts';
 import { escapeHtml } from '../utils/html';
 import { normalizeSlug, hasSlugForbiddenChars } from '../utils/slug';
 import { CDN_URLS } from '../../shared/cdn';
+import { STANDARD_EDITOR_DRAFT_LIMIT } from '../../shared/editorDraft';
 import { stripLineLeadingZeroWidth } from '../../shared/normalize';
 import { snapshotPreviewState, restorePreviewState } from './preview-state';
 import type { CMEditor, CMSelection, PageMeta, SectionRange } from './types';
@@ -591,6 +592,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const res = await fetch('/api/me');
         if (res.ok) {
             window.currentUser = await res.json();
+            const draftNotice = document.getElementById('draftLimitNotice');
+            if (draftNotice && ['user', 'discussion_manager'].includes(window.currentUser.role)) {
+                draftNotice.textContent = `초안은 최대 ${STANDARD_EDITOR_DRAFT_LIMIT}개까지 보관합니다. 새 초안 저장 시 마지막 저장 시각이 가장 오래된 초안부터 자동 삭제됩니다.`;
+                draftNotice.hidden = false;
+            }
             document.querySelectorAll('#navUserName, #userName').forEach(el => el.textContent = window.currentUser.name);
             document.querySelectorAll('#userAvatar').forEach(el => {
                 el.innerHTML = renderUserAvatar(window.currentUser.picture, window.currentUser.name, 32, 'user-avatar m-0');
