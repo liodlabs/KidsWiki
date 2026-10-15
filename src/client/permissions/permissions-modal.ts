@@ -369,7 +369,7 @@ function buildModalHtml(slug: string, page: CurrentPage | null, pageLoadError: s
                         <div class="category-tag-container" id="permBulkCatContainer" onclick="document.getElementById('permBulkCatInput')?.focus()">
                             <input type="text" class="category-tag-input" id="permBulkCatInput" placeholder="카테고리 입력 후 엔터나 쉼표 (예: 기술, API)">
                         </div>
-                        <small class="text-muted d-block mt-1">한글/영문/숫자/공백/언더바/하이픈/마침표/쉼표만 입력 가능. 자동 규칙으로 저장 시, 이후 이 문서 하위에 새로 생성되는 문서에 자동 부여됩니다.</small>
+                        <small class="text-muted d-block mt-1">한글/영문/숫자/공백/언더바/하이픈/마침표/쉼표와 ~, · 입력 가능. 자동 규칙으로 저장 시, 이후 이 문서 하위에 새로 생성되는 문서에 자동 부여됩니다.</small>
                     </fieldset>
                 </div>
                 <p class="bulkcat-section-hint">
@@ -806,11 +806,11 @@ export async function openPermissionsModal(rawSlug: string): Promise<void> {
                 const addTag = (tag: string) => {
                     const cleanTag = tag.trim();
                     if (!cleanTag) return;
-                    if (!/^[가-힣a-zA-Z0-9\s_.-]+$/.test(cleanTag)) {
+                    if (!/^[가-힣a-zA-Z0-9\s_.~·-]+$/.test(cleanTag)) {
                         swal.fire({
                             icon: 'warning',
-                            title: '특수문자 제외',
-                            text: '특수문자를 제외한 카테고리 이름을 입력해 주세요.',
+                            title: '카테고리 이름 확인',
+                            text: '카테고리에는 한글/영문/숫자/공백과 _, ., -, ~, ·만 사용할 수 있습니다.',
                             toast: true,
                             position: 'top-end',
                             timer: 2000,
@@ -901,7 +901,7 @@ export async function openPermissionsModal(rawSlug: string): Promise<void> {
             }
             if (categoriesAction === 'add' || categoriesAction === 'set') {
                 const raw = readBulkCatInput();
-                if (!/^[가-힣a-zA-Z0-9\s_.,-]+$/.test(raw)) {
+                if (!/^[가-힣a-zA-Z0-9\s_.,~·-]+$/.test(raw)) {
                     swal.showValidationMessage('카테고리에는 지정된 문자만 사용할 수 있습니다.');
                     return false;
                 }

@@ -319,14 +319,14 @@ export function splitCategoryString(s: string | null | undefined): string[] {
 
 /**
  * "카테고리:이름" 슬러그에서 자동 적용할 카테고리명을 반환한다.
- * 카테고리 패턴(한글·영문·숫자·공백만 허용)에 맞지 않으면 null 반환.
+ * 카테고리 패턴(한글·영문·숫자·공백과 ~, · 허용)에 맞지 않으면 null 반환.
  */
 export function getCategoryDocAutoCategory(slug: string): string | null {
     const prefix = '카테고리:';
     if (!slug.startsWith(prefix)) return null;
     const name = slug.slice(prefix.length).trim();
     if (!name) return null;
-    if (!/^[가-힣a-zA-Z0-9\s]+$/.test(name)) return null;
+    if (!/^[가-힣a-zA-Z0-9\s~·]+$/.test(name)) return null;
     return name;
 }
 
@@ -1091,7 +1091,7 @@ wiki.post('/w/check-category', requireAuth, async (c) => {
     if (!raw) {
         return c.json({ ok: false, reason: 'invalid' as const });
     }
-    if (!/^[가-힣a-zA-Z0-9\s_.-]+$/.test(raw)) {
+    if (!/^[가-힣a-zA-Z0-9\s_.~·-]+$/.test(raw)) {
         return c.json({ ok: false, reason: 'invalid' as const });
     }
 
@@ -2180,11 +2180,11 @@ wiki.put('/w/:slug', requireAuth, requirePermission('wiki:edit'), async (c) => {
         body.content = stripLineLeadingZeroWidth(body.content);
     }
 
-    // 보안: 카테고리 특수문자 금지 (한글, 영문, 숫자, 공백, 쉼표만 허용)
+    // 카테고리 허용 문자: 한글, 영문, 숫자, 공백, 쉼표, ~, ·
     if (body.category) {
-        const categoryPattern = /^[가-힣a-zA-Z0-9\s,]+$/;
+        const categoryPattern = /^[가-힣a-zA-Z0-9\s,~·]+$/;
         if (!categoryPattern.test(body.category)) {
-            return c.json({ error: '카테고리에는 특수문자를 사용할 수 없습니다.' }, 400);
+            return c.json({ error: '카테고리에 사용할 수 없는 문자가 포함되어 있습니다.' }, 400);
         }
     }
 

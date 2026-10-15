@@ -1315,7 +1315,7 @@ adminRoutes.put('/category-acl/:name', async (c) => {
     const currentUser = c.get('user')!;
     const name = c.req.param('name');
     if (!name) return c.json({ error: 'name 이 비어 있습니다.' }, 400);
-    if (!/^[가-힣a-zA-Z0-9\s_.-]+$/.test(name)) {
+    if (!/^[가-힣a-zA-Z0-9\s_.~·-]+$/.test(name)) {
         return c.json({ error: '카테고리 이름에 사용할 수 없는 문자가 포함되어 있습니다.' }, 400);
     }
 
@@ -1421,7 +1421,7 @@ adminRoutes.post('/category-acl/:name/bulk-apply', async (c) => {
     const currentUser = c.get('user')!;
     const name = c.req.param('name');
     if (!name) return c.json({ error: 'name 이 비어 있습니다.' }, 400);
-    if (!/^[가-힣a-zA-Z0-9\s_.-]+$/.test(name)) {
+    if (!/^[가-힣a-zA-Z0-9\s_.~·-]+$/.test(name)) {
         return c.json({ error: '카테고리 이름에 사용할 수 없는 문자가 포함되어 있습니다.' }, 400);
     }
 
@@ -2212,7 +2212,7 @@ adminRoutes.get('/pages/deleted', async (c) => {
 // 관리자 전용 (이 라우터 자체가 requireAdmin 미들웨어로 보호됨).
 
 const PREFIX_FORBIDDEN_CHARS = /[\x00-\x1F\x7F]/;
-const CATEGORY_PATTERN = /^[가-힣a-zA-Z0-9\s,]+$/;
+const CATEGORY_PATTERN = /^[가-힣a-zA-Z0-9\s,~·]+$/;
 
 function normalizeCategoryString(s: string): string {
     return s
@@ -2345,7 +2345,7 @@ adminRoutes.post('/category-prefix-rules', async (c) => {
 
     const rawCategories = typeof body.categories === 'string' ? body.categories : '';
     if (!CATEGORY_PATTERN.test(rawCategories) || rawCategories.trim() === '') {
-        return c.json({ error: '카테고리에는 한글/영문/숫자/공백/쉼표만 사용할 수 있습니다.' }, 400);
+        return c.json({ error: '카테고리에는 한글/영문/숫자/공백/쉼표와 ~, ·만 사용할 수 있습니다.' }, 400);
     }
     const categories = normalizeCategoryString(rawCategories);
     if (!categories) {
@@ -2456,7 +2456,7 @@ adminRoutes.post('/category-prefix-rules/bulk-apply', async (c) => {
 
     const rawCategories = typeof body.categories === 'string' ? body.categories : '';
     if (!CATEGORY_PATTERN.test(rawCategories) || rawCategories.trim() === '') {
-        return c.json({ error: '카테고리에는 한글/영문/숫자/공백/쉼표만 사용할 수 있습니다.' }, 400);
+        return c.json({ error: '카테고리에는 한글/영문/숫자/공백/쉼표와 ~, ·만 사용할 수 있습니다.' }, 400);
     }
     const categories = normalizeCategoryString(rawCategories);
     if (!categories) {
@@ -2672,7 +2672,7 @@ adminRoutes.post('/doc-setting-prefix-rules', async (c) => {
             categoriesNormalized = null;
         } else if (typeof raw === 'string') {
             if (!CATEGORY_PATTERN.test(raw)) {
-                return c.json({ error: '카테고리에는 한글/영문/숫자/공백/쉼표만 사용할 수 있습니다.' }, 400);
+                return c.json({ error: '카테고리에는 한글/영문/숫자/공백/쉼표와 ~, ·만 사용할 수 있습니다.' }, 400);
             }
             const norm = normalizeCategoryString(raw);
             categoriesNormalized = norm || null;
@@ -2839,7 +2839,7 @@ adminRoutes.post('/doc-setting-prefix-rules/bulk-apply', async (c) => {
     if (categoriesAction === 'add' || categoriesAction === 'set') {
         const raw = typeof body.categoriesValue === 'string' ? body.categoriesValue : '';
         if (!CATEGORY_PATTERN.test(raw) || raw.trim() === '') {
-            return c.json({ error: '카테고리에는 한글/영문/숫자/공백/쉼표만 사용할 수 있습니다.' }, 400);
+            return c.json({ error: '카테고리에는 한글/영문/숫자/공백/쉼표와 ~, ·만 사용할 수 있습니다.' }, 400);
         }
         const norm = normalizeCategoryString(raw);
         if (!norm) {

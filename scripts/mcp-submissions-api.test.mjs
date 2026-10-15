@@ -127,6 +127,70 @@ test('API 키로 작성·제출해도 승인 전까지 비공개로 남고 명�
     } finally { await f.close(); }
 });
 
+test('MCP로 홈의 월령·주제 카테고리를 발행하고 변경할 수 있다', async () => {
+    const f = fixture();
+    try {
+        const title = '홈에 연결할 문서';
+        const categories = ['0~6개월', '7~12개월', '1~3세', '4~6세', '수유·이유식'];
+        const created = await f.call('create_or_update_page', { title, content: '본문', category: categories.join(',') });
+        assert.equal(created.isError, false, JSON.stringify(created));
+        const id = data(created).draft_id;
+        assert.equal((await f.call('commit_edit', { draft_id: id })).isError, false);
+        assert.equal((await f.call('approve_submission', { draft_id: id })).isError, false);
+        const page = f.sqlite.prepare('SELECT id, category FROM pages WHERE slug = ?').get(title);
+        assert.equal(page.category, categories.join(','));
+        const indexed = () => f.sqlite.prepare('SELECT category FROM page_categories WHERE page_id = ? ORDER BY category').all(page.id).map(row => row.category);
+        assert.deepEqual(indexed(), [...categories].sort());
+
+        assert.equal((await f.call('set_page_status', { title, category: '수유·이유식,0~6개월' })).isError, false);
+        assert.deepEqual(indexed(), ['0~6개월', '수유·이유식']);
+        for (const category of ['<script>', '수유|이유식', '수유/이유식']) {
+            assert.equal((await f.call('create_or_update_page', { title, content: '본문', category })).isError, true);
+            assert.equal((await f.call('set_page_status', { title, category })).isError, true);
+        }
+        assert.deepEqual(indexed(), ['0~6개월', '수유·이유식']);
+    } finally { await f.close(); }
+});
+
+test('웹 카테고리 사전 검증과 카테고리 문서 자동 분류가 ~와 ·를 허용한다', async () => {
+    const f = fixture();
+    const web = (url, init) => f.request(url, { ...init, headers: { Cookie: 'wiki_session=cookie-a' } }, null);
+    try {
+        for (const category of ['0~6개월', '수유·이유식']) {
+            const check = await web('/api/w/check-category', post({ category }));
+            assert.equal((await check.json()).ok, true);
+            const slug = '카테고리:' + category;
+            const saved = await web('/api/w/' + encodeURIComponent(slug), { method: 'PUT', body: JSON.stringify({ content: '카테고리 안내' }) });
+            assert.equal(saved.status, 201, await saved.text());
+            const page = f.sqlite.prepare('SELECT id, category FROM pages WHERE slug = ?').get(slug);
+            assert.equal(page.category, category);
+            assert.equal(f.sqlite.prepare('SELECT category FROM page_categories WHERE page_id = ?').get(page.id).category, category);
+        }
+        for (const category of ['<script>', '수유|이유식', '수유/이유식', '수유,이유식']) {
+            assert.equal((await (await web('/api/w/check-category', post({ category }))).json()).ok, false);
+        }
+        const invalid = await web('/api/w/' + encodeURIComponent('잘못된 카테고리'), { method: 'PUT', body: JSON.stringify({ content: '본문', category: '<script>' }) });
+        assert.equal(invalid.status, 400);
+    } finally { await f.close(); }
+});
+
+test('관리자의 카테고리 ACL과 자동 분류 규칙이 ~와 ·를 허용한다', async () => {
+    const f = fixture();
+    const web = (url, init) => f.request('/api/admin' + url, { ...init, headers: { Cookie: 'wiki_session=cookie-a' } }, null);
+    try {
+        for (const category of ['0~6개월', '수유·이유식']) {
+            const saved = await web('/category-acl/' + encodeURIComponent(category), { method: 'PUT', body: JSON.stringify({ edit_acl: { flags: ['admin_only'] } }) });
+            assert.equal(saved.status, 200, await saved.text());
+            assert.ok(f.sqlite.prepare('SELECT name FROM category_acl WHERE name = ?').get(category));
+        }
+        const saved = await web('/category-prefix-rules', post({ prefix: '육아', categories: '0~6개월,수유·이유식' }));
+        assert.equal(saved.status, 200, await saved.text());
+        assert.equal(f.sqlite.prepare('SELECT categories FROM category_prefix_rules WHERE prefix = ?').get('육아').categories, '0~6개월,수유·이유식');
+        const invalid = await web('/category-prefix-rules', post({ prefix: '육아', categories: '<script>' }));
+        assert.equal(invalid.status, 400);
+    } finally { await f.close(); }
+});
+
 test('API 키로 목록·상세를 읽고 본인 제출안만 실제 문서로 발행한다', async () => {
     const f = fixture();
     try {

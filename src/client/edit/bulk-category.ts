@@ -197,9 +197,9 @@ function hookRuleDeleteButtons(container: HTMLElement, relatedTo: string) {
 }
 
 // 카테고리 칩 한 항목의 형식 검증 — 백엔드 CATEGORY_PATTERN 이 콤마 포함 문자열
-// 전체에 한글/영문/숫자/공백/쉼표만 허용하므로, 칩 단위로는 콤마를 제외한
-// 한글/영문/숫자/공백만 허용한다.
-const BULK_CAT_TAG_RE = /^[가-힣a-zA-Z0-9\s]+$/;
+// 전체에 한글/영문/숫자/공백/쉼표와 ~, ·를 허용하므로, 칩 단위로는 콤마를 제외한
+// 한글/영문/숫자/공백과 ~, ·를 허용한다.
+const BULK_CAT_TAG_RE = /^[가-힣a-zA-Z0-9\s~·]+$/;
 
 interface BulkCatAcState {
     visible: boolean;
@@ -283,8 +283,8 @@ function installBulkCategoryTagUI(opts: { onTagsChanged?: () => void } = {}): {
         if (!BULK_CAT_TAG_RE.test(cleanTag)) {
             window.Swal?.fire({
                 icon: 'warning',
-                title: '특수문자 제외',
-                text: '특수문자를 제외한 카테고리 이름을 입력해 주세요.',
+                title: '카테고리 이름 확인',
+                text: '카테고리에는 한글/영문/숫자/공백과 ~, ·만 사용할 수 있습니다.',
                 toast: true,
                 position: 'top-end',
                 timer: 2000,

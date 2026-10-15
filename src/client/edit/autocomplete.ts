@@ -1590,11 +1590,11 @@ async function addCategoryTag(tag: string): Promise<void> {
     if (!window.categoryTags) window.categoryTags = [];
     if (!window.categoryAclChoices) window.categoryAclChoices = {};
 
-    if (!/^[가-힣a-zA-Z0-9\s_.-]+$/.test(cleanTag)) {
+    if (!/^[가-힣a-zA-Z0-9\s_.~·-]+$/.test(cleanTag)) {
         window.Swal?.fire({
             icon: 'warning',
-            title: '특수문자 제외',
-            text: '특수문자를 제외한 카테고리 이름을 입력해 주세요.',
+            title: '카테고리 이름 확인',
+            text: '카테고리에는 한글/영문/숫자/공백과 _, ., -, ~, ·만 사용할 수 있습니다.',
             toast: true,
             position: 'top-end',
             timer: 2000,
