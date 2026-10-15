@@ -69,6 +69,7 @@ export default defineConfig({
                 'memo': resolve(__dirname, 'src/client/pages/memo.ts'),
                 'admin': resolve(__dirname, 'src/client/pages/admin.ts'),
                 'mypage': resolve(__dirname, 'src/client/pages/mypage.ts'),
+                'content': resolve(__dirname, 'src/client/pages/content.ts'),
                 'tickets': resolve(__dirname, 'src/client/pages/tickets.ts'),
                 'discussions': resolve(__dirname, 'src/client/pages/discussions.ts'),
                 'edit-page': resolve(__dirname, 'src/client/edit/page.ts'),

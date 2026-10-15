@@ -25,6 +25,8 @@ import {
 import { APPLY_EDIT_TOOL_DEF, dispatchApplyEditTool } from '../utils/mcpDraftApply';
 import { isTrustedContributor } from '../utils/contributorTrust';
 import { PERSONAL_DRAFT_READ_TOOLS, PERSONAL_DRAFT_WRITE_TOOLS, dispatchPersonalDraftTool } from './mcp-editor-drafts';
+import { SUBMISSION_TOOLS, dispatchSubmissionTool } from './mcp-submission-tools';
+import { PUBLISHED_PAGE_TOOL, dispatchPublishedPagesTool } from './content-workflow';
 
 const mcpRoutes = new Hono<Env>();
 
@@ -116,8 +118,8 @@ mcpRoutes.get('/', (c) => {
 
 export function getUserToolDefs(canInstantApply: boolean) {
     return canInstantApply
-        ? [...USER_TOOL_DEFS, APPLY_EDIT_TOOL_DEF, ...USER_INSTANT_EDIT_TOOL_DEFS]
-        : USER_TOOL_DEFS;
+        ? [...USER_TOOL_DEFS, ...SUBMISSION_TOOLS, APPLY_EDIT_TOOL_DEF, ...USER_INSTANT_EDIT_TOOL_DEFS]
+        : [...USER_TOOL_DEFS, ...SUBMISSION_TOOLS];
 }
 
 // 공통 JSON-RPC 처리 함수
@@ -145,7 +147,7 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
     const sharedToolDefs = getSharedToolDefs(c.env);
     const visibleToolDefs = [
         ...sharedToolDefs,
-        ...(user && rbac.can(role, 'wiki:read') ? PERSONAL_DRAFT_READ_TOOLS : []),
+        ...(user && rbac.can(role, 'wiki:read') ? [...PERSONAL_DRAFT_READ_TOOLS, PUBLISHED_PAGE_TOOL] : []),
         ...(user && rbac.can(role, 'wiki:edit') ? PERSONAL_DRAFT_WRITE_TOOLS : []),
         ...(canEdit ? getUserToolDefs(canInstantApply) : []),
         ...(isAdmin ? ADMIN_ONLY_TOOL_DEFS : []),
@@ -219,6 +221,12 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
             if (user) {
                 const personalDraft = await dispatchPersonalDraftTool(c, toolName, args);
                 if (personalDraft) return { jsonrpc: '2.0', id, result: personalDraft };
+
+                if (toolName === 'list_published_pages') {
+                    return { jsonrpc: '2.0', id, result: await dispatchPublishedPagesTool(c, args) };
+                }
+                const submission = await dispatchSubmissionTool(c, toolName, args);
+                if (submission) return { jsonrpc: '2.0', id, result: submission };
             }
 
             // apply_edit(즉시 적용) — canInstantApply 사용자에게만 visibleToolDefs 에 포함되므로

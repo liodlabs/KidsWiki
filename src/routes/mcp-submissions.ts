@@ -17,9 +17,10 @@
 // 변했거나, 페이지가 삭제되었으면 409 Conflict 와 함께 거부한다 — 같은 정책을 MCP 즉시 적용
 // (apply_edit) 과 공유한다. 실제 확정 로직은 utils/mcpDraftApply.ts 의 applyDraftMutation 단일 소스.
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Env, User } from '../types';
 import { requireAuth } from '../middleware/session';
+import { authenticateApiToken } from '../middleware/apiToken';
 import { RBAC } from '../utils/role';
 import { isR2OnlyNamespace } from '../utils/slug';
 import { getEnabledExtensions } from '../utils/extensions';
@@ -35,11 +36,17 @@ const mcpSubmissionsRoutes = new Hono<Env>();
 
 // 본 라우터의 모든 핸들러는 mcp_drafts.submitted_at/submitted_summary 컬럼을 사용하므로
 // 진입 시 idempotent 마이그레이션을 보장한다 — isolate 당 한 번만 실행된다.
+mcpSubmissionsRoutes.use('/mcp-submissions', authenticateApiToken);
+mcpSubmissionsRoutes.use('/mcp-submissions/*', authenticateApiToken);
 mcpSubmissionsRoutes.use('/mcp-submissions/*', async (c, next) => {
-    await ensureMcpDraftsMigration(c.env.DB);
-    await ensureEditorNoteMigration(c.env.DB);
+    await ensureSubmissionSchema(c);
     await next();
 });
+
+export async function ensureSubmissionSchema(c: Context<Env>) {
+    await ensureMcpDraftsMigration(c.env.DB);
+    await ensureEditorNoteMigration(c.env.DB);
+}
 
 interface DraftRow {
     id: number;
@@ -85,7 +92,10 @@ async function loadSubmittedDraftForUser(
  * 본인 제출안 목록 (최신순). 페이지별 현재 last_revision_id / version 도 함께 조인해
  * has_conflict 를 미리 계산한다 — mypage 에서 충돌 경고를 노출하기 위함.
  */
-mcpSubmissionsRoutes.get('/mcp-submissions', requireAuth, async (c) => {
+export async function listSubmittedDrafts(c: Context<Env>, limit = 100, offset = 0) {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) {
+        return c.json({ error: '잘못된 목록 조건입니다.' }, 400);
+    }
     const user = c.get('user')!;
     // LEFT JOIN 은 live 페이지만 매칭하고, soft-deleted 슬러그는 EXISTS 서브쿼리로 별도 감지한다.
     // create 액션 제출이 그 사이 슬러그가 소프트 삭제된 동일 슬러그와 충돌하는 경우 approve 가 거부하므로
@@ -101,16 +111,16 @@ mcpSubmissionsRoutes.get('/mcp-submissions', requireAuth, async (c) => {
         FROM mcp_drafts d
         LEFT JOIN pages p ON p.slug = d.slug AND p.deleted_at IS NULL
         WHERE d.user_id = ? AND d.submitted_at IS NOT NULL
-        ORDER BY d.submitted_at DESC
-        LIMIT 100
-    `).bind(user.id).all<{
+        ORDER BY d.submitted_at DESC, d.id DESC
+        LIMIT ? OFFSET ?
+    `).bind(user.id, limit + 1, offset).all<{
         id: number; slug: string; action: string; base_revision_id: number | null; base_version: number;
         submitted_at: number; submitted_summary: string | null; updated_at: number; content_length: number;
         current_revision_id: number | null; current_version: number | null;
         current_deleted_at: number | null; has_soft_deleted: number;
     }>();
 
-    const submissions = results.map(r => {
+    const submissions = results.slice(0, limit).map(r => {
         // action='update' 인데 현재 페이지가 없으면 (=삭제됨) 충돌. 있으면 base 와 현재 비교.
         // action='create' 인데 현재 페이지가 있으면 슬러그 점거 충돌.
         //   추가로 소프트 삭제된 동일 슬러그 페이지가 있으면 approve 단계에서 거부되므로 미리 표시한다.
@@ -148,8 +158,11 @@ mcpSubmissionsRoutes.get('/mcp-submissions', requireAuth, async (c) => {
             conflict_reason: conflictReason,
         };
     });
-    return c.json({ submissions });
-});
+    return c.json({ submissions, nextOffset: results.length > limit ? offset + limit : null });
+}
+
+mcpSubmissionsRoutes.get('/mcp-submissions', requireAuth, c => listSubmittedDrafts(c,
+    Number(c.req.query('limit') ?? 100), Number(c.req.query('offset') ?? 0)));
 
 /**
  * GET /api/mcp-submissions/count?slug=
@@ -174,10 +187,9 @@ mcpSubmissionsRoutes.get('/mcp-submissions/count', requireAuth, async (c) => {
  * 제출 상세 — proposed_content + 페이지 현재 본문(current_content) + 메타.
  * R2 전용 네임스페이스면 현재 본문은 마지막 리비전 R2 키에서 읽는다.
  */
-mcpSubmissionsRoutes.get('/mcp-submissions/:id', requireAuth, async (c) => {
+export async function readSubmittedDraft(c: Context<Env>, draftId: number) {
     const user = c.get('user')!;
-    const draftId = Number(c.req.param('id'));
-    if (!Number.isFinite(draftId) || draftId <= 0) {
+    if (!Number.isSafeInteger(draftId) || draftId <= 0) {
         return c.json({ error: 'invalid id' }, 400);
     }
     const draft = await loadSubmittedDraftForUser(c.env, user, draftId);
@@ -283,7 +295,9 @@ mcpSubmissionsRoutes.get('/mcp-submissions/:id', requireAuth, async (c) => {
         lines_added: diffStats?.added ?? 0,
         lines_removed: diffStats?.removed ?? 0,
     });
-});
+}
+
+mcpSubmissionsRoutes.get('/mcp-submissions/:id', requireAuth, c => readSubmittedDraft(c, Number(c.req.param('id'))));
 
 /**
  * POST /api/mcp-submissions/:id/approve
@@ -291,7 +305,7 @@ mcpSubmissionsRoutes.get('/mcp-submissions/:id', requireAuth, async (c) => {
  * submitted_summary (AI 가 제안한 요약) 를 사용. 둘 다 비었으면 변경량 표시만 남는다.
  * 충돌/ACL/카테고리 재검증 + 실제 저장은 공용 applyDraftMutation 에 위임한다(즉시 적용 apply_edit 과 동일 소스).
  */
-mcpSubmissionsRoutes.post('/mcp-submissions/:id/approve', requireAuth, async (c) => {
+export async function approveSubmittedDraft(c: Context<Env>, draftId: number, summary?: unknown) {
     const user = c.get('user')!;
     const rbac = c.get('rbac') as RBAC;
     // 제출 시점 이후 사용자의 권한이 박탈되었을 가능성 — commit_edit 와 동일하게 wiki:edit
@@ -303,17 +317,15 @@ mcpSubmissionsRoutes.post('/mcp-submissions/:id/approve', requireAuth, async (c)
     if (c.env.EDIT_REQUEST_ENABLED === 'true' && !isAdmin && !(await isTrustedContributor(c.env.DB, user.id))) {
         return c.json({ error: 'forbidden', message: 'MCP 제출안을 직접 반영하려면 신뢰 기여자 또는 관리자여야 합니다.' }, 403);
     }
-    const draftId = Number(c.req.param('id'));
-    if (!Number.isFinite(draftId) || draftId <= 0) return c.json({ error: 'invalid id' }, 400);
+    if (!Number.isSafeInteger(draftId) || draftId <= 0) return c.json({ error: 'invalid id' }, 400);
 
-    const body = await c.req.json<{ summary?: string }>().catch(() => ({} as { summary?: string }));
     // 유저가 명시적으로 빈 문자열을 보내면 AI summary 도 적용하지 않는다 ('' !== undefined).
     // 키 자체가 누락된 경우에만 AI summary 로 폴백 — 의도적인 빈 요약 의사를 보존하기 위함.
     const draft = await loadSubmittedDraftForUser(c.env, user, draftId);
     if (!draft) return c.json({ error: 'not found' }, 404);
 
-    const finalSummaryRaw = (typeof body.summary === 'string')
-        ? body.summary
+    const finalSummaryRaw = (typeof summary === 'string')
+        ? summary
         : (draft.submitted_summary ?? '');
     const finalSummary = finalSummaryRaw.length > 0 ? finalSummaryRaw : null;
     const summaryLengthError = validateMcpSummaryLength(finalSummary);
@@ -324,6 +336,11 @@ mcpSubmissionsRoutes.post('/mcp-submissions/:id/approve', requireAuth, async (c)
         return c.json(outcome.body, outcome.status as 400 | 403 | 409 | 500);
     }
     return c.json(outcome.body);
+}
+
+mcpSubmissionsRoutes.post('/mcp-submissions/:id/approve', requireAuth, async (c) => {
+    const body = await c.req.json<{ summary?: unknown }>().catch(() => ({} as { summary?: unknown }));
+    return approveSubmittedDraft(c, Number(c.req.param('id')), body?.summary);
 });
 
 /**
@@ -355,10 +372,9 @@ mcpSubmissionsRoutes.post('/mcp-submissions/:id/resolve', requireAuth, async (c)
  * POST /api/mcp-submissions/:id/reject
  * 본인 제출안 폐기. draft + 알림 삭제, admin_log 에 기록.
  */
-mcpSubmissionsRoutes.post('/mcp-submissions/:id/reject', requireAuth, async (c) => {
+export async function rejectSubmittedDraft(c: Context<Env>, draftId: number) {
     const user = c.get('user')!;
-    const draftId = Number(c.req.param('id'));
-    if (!Number.isFinite(draftId) || draftId <= 0) return c.json({ error: 'invalid id' }, 400);
+    if (!Number.isSafeInteger(draftId) || draftId <= 0) return c.json({ error: 'invalid id' }, 400);
     const draft = await loadSubmittedDraftForUser(c.env, user, draftId);
     if (!draft) return c.json({ error: 'not found' }, 404);
 
@@ -372,6 +388,8 @@ mcpSubmissionsRoutes.post('/mcp-submissions/:id/reject', requireAuth, async (c) 
             .run().catch(() => {})
     );
     return c.json({ rejected: true, id: draft.id, slug: draft.slug });
-});
+}
+
+mcpSubmissionsRoutes.post('/mcp-submissions/:id/reject', requireAuth, c => rejectSubmittedDraft(c, Number(c.req.param('id'))));
 
 export default mcpSubmissionsRoutes;

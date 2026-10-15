@@ -123,6 +123,7 @@ export type BundleName = 'base' | 'markdown' | 'editor' | 'turnstile' | 'diff';
 export const PAGE_BUNDLES: Record<string, BundleName[]> = {
     '/index.html':          ['base', 'markdown'],
     '/blog.html':           ['base', 'markdown'],
+    '/content.html':         ['base'],
     '/mypage.html':         ['base', 'markdown'],
     '/revisions.html':      ['base', 'markdown'],
     '/discussions.html':    ['base', 'markdown', 'editor'],

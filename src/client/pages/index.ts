@@ -955,7 +955,7 @@ import { createTocController } from '../article/toc';
                 variant: 'warning',
                 icon: 'bi bi-plug',
                 message: 'MCP 서버로 제출된 편집안이 존재합니다.',
-                action: { label: '검토하기', iconClass: 'bi bi-eye', href: '/mypage#mcp-submissions' },
+                action: { label: '검토하기', iconClass: 'bi bi-eye', href: '/content#submitted' },
               });
             })
             .catch(() => { });

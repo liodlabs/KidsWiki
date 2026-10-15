@@ -211,3 +211,24 @@ test('MCP 입력 검증 실패는 초안을 남기지 않는다', async () => {
         assert.deepEqual((await (await f.request(overview)).json()).drafts, []);
     } finally { await f.close(); }
 });
+
+test('API 키로 개인 초안을 삭제하며 타인 초안과 다른 기기에서 수정된 초안은 보존한다', async () => {
+    const f = fixture();
+    try {
+        const saved = data(await f.call('save_personal_draft', saveArgs('삭제할 개인 초안'))).draft;
+        const args = { key: saved.key, expected_revision: saved.revision };
+        assert.equal((await f.call('delete_personal_draft', args, tokenB)).isError, false);
+        assert.equal((await f.request(path(saved.key))).status, 200);
+        const updated = data(await f.call('save_personal_draft', {
+            ...saveArgs('삭제할 개인 초안', saved.revision), content: '다른 기기에서 수정한 본문',
+        })).draft;
+        assert.equal((await f.call('delete_personal_draft', args)).isError, true);
+        assert.equal((await f.request(path(saved.key))).status, 200);
+        assert.equal((await f.call('delete_personal_draft', { key: saved.key })).isError, true);
+        assert.equal((await f.call('delete_personal_draft', { ...args, expected_revision: updated.revision })).isError, false);
+        assert.equal((await f.request(path(saved.key))).status, 404);
+        assert.equal((await f.call('delete_personal_draft', { ...args, expected_revision: updated.revision })).isError, false);
+    } finally { await f.close(); }
+});
+
+function data(result) { return JSON.parse(result.content[0].text); }
