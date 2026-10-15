@@ -78,6 +78,10 @@ test('중복 계정은 대표 계정으로 이동되고 예전 ID는 별칭으�
     sqlite.prepare("INSERT INTO contributor_trust_events (user_id, event_type, source_type, source_id, document_key) VALUES (?, 'approved', 'test', '1', '병합-테스트')").run(absorbed);
     sqlite.prepare("INSERT INTO user_badges (user_id, badge_key, assigned_by) VALUES (?, 'verified_expert', ?)").run(absorbed, survivor);
     sqlite.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES ('session-b', ?, 9999999999)").run(absorbed);
+    const insertKey = sqlite.prepare('INSERT INTO mcp_api_keys (id, user_id, name, key_hash, masked_key, expires_at) VALUES (?, ?, ?, ?, ?, NULL)');
+    for (const id of [survivor, absorbed]) {
+        for (let i = 0; i < 2; i++) insertKey.run(`${id}-${i}`, id, `키 ${i}`, `${id}-hash-${i}`, 'mcp_test...test');
+    }
 
     sqlite.prepare("INSERT INTO editor_drafts (user_id, draft_key, payload, revision, updated_at) VALUES (?, 'wiki_draft_개인초안', '{}', 'rev-a', 1)").run(absorbed);
     const result = await mergeAccounts(db, survivor, absorbed);
@@ -95,6 +99,8 @@ test('중복 계정은 대표 계정으로 이동되고 예전 ID는 별칭으�
     assert.equal(sqlite.prepare('SELECT role FROM users WHERE id = ?').get(absorbed).role, 'deleted');
     assert.equal(await resolveCanonicalUserId(db, absorbed), survivor);
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(absorbed).count, 0);
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM mcp_api_keys WHERE user_id = ?').get(absorbed).count, 0);
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM mcp_api_keys WHERE user_id = ?').get(survivor).count, 2);
 });
 
 test('OAuth 이메일이 최고관리자인 계정은 연결 시작 방향과 무관하게 생존한다', async () => {

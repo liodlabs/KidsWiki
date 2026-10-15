@@ -1640,149 +1640,144 @@ import { renderUserAvatar } from '../utils/avatar';
         async function loadMcpApiKey() {
             const section = document.getElementById('wikiMcpSection');
             const container = document.getElementById('mcpApiKeyContainer');
-            const deleteBtn = document.getElementById('deleteMcpApiKeyBtn');
-            if (!container || !deleteBtn) return;
-
+            const generateBtn = document.getElementById('generateMcpApiKeyBtn');
+            const usage = document.getElementById('mcpApiKeyUsage');
+            if (!container || !generateBtn || !usage) return;
+            generateBtn.disabled = true;
             try {
-                const res = await fetch('/api/me/mcp-api-key');
+                const res = await fetch('/api/me/mcp-api-keys', { cache: 'no-store' });
                 if (!res.ok) throw new Error();
-                const data = await res.json();
-                const apiKey = data.apiKey;
-
+                const { apiKeys, limit } = await res.json();
+                const now = Date.now() / 1000;
+                const activeCount = apiKeys.filter(key => key.expires_at === null || key.expires_at > now).length;
+                usage.textContent = `유효한 키 ${activeCount} / ${limit}개 · 만료된 키는 한도에서 제외됩니다.`
+                    + (activeCount >= limit ? ' 새 키를 추가하려면 기존 키를 삭제해주세요.' : '');
+                generateBtn.disabled = activeCount >= limit;
                 if (section) section.style.display = '';
-
-                if (!apiKey) {
-                    container.innerHTML = '<div class="text-center text-muted py-2">발급된 API 키가 없습니다.</div>';
-                    deleteBtn.classList.add('d-none');
-                    return;
-                }
-
-                const createdDate = new Date(apiKey.created_at * 1000).toLocaleString('ko-KR');
-                const expiresDate = new Date(apiKey.expires_at * 1000).toLocaleString('ko-KR');
-                const diffDays = Math.max(0, Math.ceil((apiKey.expires_at - Date.now() / 1000) / 86400));
-
-                container.innerHTML = `
-                    <div class="d-flex flex-column gap-1">
-                        <div><strong>현재 API 키:</strong> <code style="color: var(--wiki-primary); background: transparent; padding: 0; font-family: var(--wiki-code-font);">${window.escapeHtml(apiKey.masked_key)}</code></div>
-                        <div class="small text-muted"><i class="mdi mdi-clock-outline"></i> 발급일: ${createdDate}</div>
-                        <div class="small text-muted">
-                            <i class="mdi mdi-timer-sand"></i> 만료일: ${expiresDate} 
-                            <span class="badge ${diffDays <= 7 ? 'bg-danger' : 'bg-secondary'}">${diffDays}일 남음</span>
+                container.innerHTML = apiKeys.length ? apiKeys.map(apiKey => {
+                    const expired = apiKey.expires_at !== null && apiKey.expires_at <= now;
+                    const expires = apiKey.expires_at === null ? '무기한' : expired ? '만료됨'
+                        : `${new Date(apiKey.expires_at * 1000).toLocaleString('ko-KR')} 만료`;
+                    return `<div class="border rounded p-3 mb-2">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <strong class="text-break">${window.escapeHtml(apiKey.name)}</strong>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-key-id="${window.escapeHtml(apiKey.id)}"
+                                aria-label="${window.escapeHtml(apiKey.name)} 키 삭제">삭제</button>
                         </div>
-                    </div>
-                `;
-                deleteBtn.classList.remove('d-none');
-            } catch (e) {
+                        <code class="d-block text-break my-1">${window.escapeHtml(apiKey.masked_key)}</code>
+                        <div class="small text-muted">발급: ${new Date(apiKey.created_at * 1000).toLocaleString('ko-KR')}</div>
+                        <div class="small ${expired ? 'text-danger' : 'text-muted'}">${expires}</div>
+                    </div>`;
+                }).join('') : '<div class="text-center text-muted py-2">발급된 API 키가 없습니다.</div>';
+                container.querySelectorAll('[data-key-id]').forEach(button => {
+                    button.addEventListener('click', () => deleteMcpApiKey(button.dataset.keyId));
+                });
+            } catch {
                 if (section) section.style.display = '';
-                container.innerHTML = '<div class="text-center text-danger py-2">API 키 정보를 불러오지 못했습니다.</div>';
+                usage.textContent = '';
+                container.innerHTML = '<div class="text-danger py-2">API 키 정보를 불러오지 못했습니다.</div>';
+                const retry = document.createElement('button');
+                retry.type = 'button';
+                retry.className = 'btn btn-sm btn-wiki-outline';
+                retry.textContent = '다시 불러오기';
+                retry.addEventListener('click', loadMcpApiKey);
+                container.append(retry);
             }
         }
 
         async function generateMcpApiKey() {
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            const confirmColor = isDark ? '#38BDF8' : '#2a53c4';
-            const swalDidOpen = isDark ? (popup: HTMLElement) => {
-                const btn = popup.querySelector('.swal2-confirm') as HTMLButtonElement | null;
-                if (btn) btn.style.color = '#000000';
-            } : undefined;
-
             const result = await Swal.fire({
-                title: 'MCP API 키 발급/갱신',
-                text: '새로운 API 키를 발급하시겠습니까? 기존에 발급된 API 키가 있는 경우 즉시 무효화됩니다. 계속하시겠습니까?',
-                icon: 'warning',
+                title: 'API 키 추가',
+                html: `<div class="text-start">
+                    <label for="mcpKeyName" class="form-label">키 이름</label>
+                    <input id="mcpKeyName" class="form-control mb-3" maxlength="80" placeholder="예: Codex, Claude Desktop" autocomplete="off">
+                    <label for="mcpKeyExpiration" class="form-label">유효기간</label>
+                    <select id="mcpKeyExpiration" class="form-select">
+                        <option value="30d">30일</option><option value="never">무기한</option>
+                    </select>
+                    <small class="text-muted d-block mt-2">무기한 키는 직접 삭제할 때까지 유효합니다.</small>
+                </div>`,
                 showCancelButton: true,
-                confirmButtonColor: confirmColor,
                 confirmButtonText: '발급',
                 cancelButtonText: '취소',
-                didOpen: swalDidOpen,
+                showLoaderOnConfirm: true,
+                allowOutsideClick: () => !Swal.isLoading(),
+                allowEscapeKey: () => !Swal.isLoading(),
+                didOpen: () => document.getElementById('mcpKeyName')?.focus(),
+                preConfirm: async () => {
+                    const name = document.getElementById('mcpKeyName').value.trim();
+                    const expiration = document.getElementById('mcpKeyExpiration').value;
+                    if (!name || name.length > 80) {
+                        Swal.showValidationMessage('키 이름을 1~80자로 입력해주세요.');
+                        return false;
+                    }
+                    try {
+                        const res = await fetch('/api/me/mcp-api-keys', { method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, expiration }) });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'API 키 발급에 실패했습니다.');
+                        return data;
+                    } catch (err) {
+                        Swal.showValidationMessage(err.message || 'API 키 발급에 실패했습니다.');
+                        void loadMcpApiKey();
+                        return false;
+                    }
+                },
             });
             if (!result.isConfirmed) return;
-
-            try {
-                const res = await fetch('/api/me/mcp-api-key', { method: 'POST' });
-                if (!res.ok) {
-                    const data = await res.json().catch(() => ({}));
-                    throw new Error(data.error || 'API 키 발급에 실패했습니다.');
-                }
-                const data = await res.json();
-                
-                await Swal.fire({
-                    title: 'API 키 발급 완료',
-                    html: `
-                        <div class="text-start">
-                            <p class="text-danger fw-bold"><i class="mdi mdi-alert"></i> 중요: 이 키는 보안을 위해 지금 단 한 번만 표시됩니다! 반드시 안전한 곳에 즉시 복사해 두십시오.</p>
-                            <div class="p-3 border rounded mb-3 text-center" style="font-family: var(--wiki-code-font); font-size: 1.1rem; word-break: break-all; background: var(--wiki-toc-bg); border: 1px solid var(--wiki-border); color: var(--wiki-text);">
-                                <code id="rawApiKeyText" style="color: var(--wiki-primary); background: transparent; padding: 0;">${window.escapeHtml(data.rawKey)}</code>
-                            </div>
-                            <div class="text-center">
-                                <button class="btn btn-wiki btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('rawApiKeyText')?.textContent||'').then(() => {
-                                    Swal.showValidationMessage('클립보드에 복사되었습니다.');
-                                    setTimeout(() => Swal.resetValidationMessage(), 2000);
-                                })">
-                                    <i class="mdi mdi-content-copy"></i> 복사하기
-                                </button>
-                            </div>
-                        </div>
-                    `,
-                    icon: 'success',
-                    width: 550,
-                    confirmButtonColor: confirmColor,
-                    confirmButtonText: '확인 및 닫기',
-                    didOpen: swalDidOpen,
-                });
-
-                loadMcpApiKey();
-            } catch (err) {
-                Swal.fire({
-                    icon: 'error',
-                    title: '오류',
-                    text: err.message,
-                    confirmButtonColor: confirmColor,
-                    didOpen: swalDidOpen,
-                });
-            }
+            const data = result.value;
+            await Swal.fire({
+                title: 'API 키 발급 완료',
+                html: `<div class="text-start">
+                    <p>키 전체는 지금 한 번만 표시됩니다. 복사해서 보관해주세요.</p>
+                    <code id="rawApiKeyText" class="d-block text-break border rounded p-3 mb-3">${window.escapeHtml(data.rawKey)}</code>
+                    <button type="button" id="copyRawMcpKey" class="btn btn-sm btn-wiki-outline">키 복사</button>
+                </div>`,
+                icon: 'success',
+                confirmButtonText: '확인 및 닫기',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                didOpen: () => {
+                    document.getElementById('copyRawMcpKey').addEventListener('click', async () => {
+                        try {
+                            await navigator.clipboard.writeText(data.rawKey);
+                            document.getElementById('copyRawMcpKey').textContent = '복사됨';
+                        } catch { Swal.showValidationMessage('복사하지 못했습니다. 키를 직접 선택해서 복사해주세요.'); }
+                    });
+                },
+            });
+            await loadMcpApiKey();
         }
 
-        async function deleteMcpApiKey() {
+        async function deleteMcpApiKey(id: string) {
+            if (!id) return;
             const result = await Swal.fire({
-                title: 'MCP API 키 삭제',
-                text: '발급된 API 키를 삭제하시겠습니까? 이 키를 사용하는 모든 외부 MCP 클라이언트의 접근이 즉시 차단됩니다. 계속하시겠습니까?',
+                title: 'API 키 삭제',
+                text: '이 키를 사용하는 클라이언트의 접근이 즉시 차단됩니다. 다른 키는 유지됩니다.',
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#cf222e',
                 confirmButtonText: '삭제',
                 cancelButtonText: '취소',
+                showLoaderOnConfirm: true,
+                allowOutsideClick: () => !Swal.isLoading(),
+                allowEscapeKey: () => !Swal.isLoading(),
+                preConfirm: async () => {
+                    try {
+                        const res = await fetch('/api/me/mcp-api-keys/' + encodeURIComponent(id), { method: 'DELETE' });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'API 키 삭제에 실패했습니다.');
+                        return true;
+                    } catch (err) {
+                        Swal.showValidationMessage(err.message || 'API 키 삭제에 실패했습니다.');
+                        return false;
+                    }
+                },
             });
-            if (!result.isConfirmed) return;
-
-            try {
-                const res = await fetch('/api/me/mcp-api-key', { method: 'DELETE' });
-                const data = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(data.error || 'API 키 삭제에 실패했습니다.');
-
-                Swal.fire({
-                    icon: 'success',
-                    title: 'API 키가 삭제되었습니다.',
-                    toast: true,
-                    position: 'top-end',
-                    showConfirmButton: false,
-                    timer: 1500
-                });
-                loadMcpApiKey();
-            } catch (err) {
-                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                const confirmColor = isDark ? '#38BDF8' : '#2a53c4';
-                const swalDidOpen = isDark ? (popup: HTMLElement) => {
-                    const btn = popup.querySelector('.swal2-confirm') as HTMLButtonElement | null;
-                    if (btn) btn.style.color = '#000000';
-                } : undefined;
-                Swal.fire({
-                    icon: 'error',
-                    title: '오류',
-                    text: err.message,
-                    confirmButtonColor: confirmColor,
-                    didOpen: swalDidOpen,
-                });
+            if (result.isConfirmed) {
+                await loadMcpApiKey();
+                void Swal.fire({ icon: 'success', title: 'API 키가 삭제되었습니다.', toast: true,
+                    position: 'top-end', showConfirmButton: false, timer: 1500 });
             }
         }
 

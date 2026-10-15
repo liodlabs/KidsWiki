@@ -641,12 +641,10 @@ import Footer from '../components/Footer.astro';
                     <div id="mcpApiKeyContainer" class="mcp-api-key-container mb-2">
                         <div class="text-center text-muted py-2">불러오는 중...</div>
                     </div>
+                    <p id="mcpApiKeyUsage" class="small text-muted" aria-live="polite"></p>
                     <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-wiki" id="generateMcpApiKeyBtn" onclick="generateMcpApiKey()">
-                            <i class="mdi mdi-key-plus"></i> API 키 발급/갱신
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger d-none" id="deleteMcpApiKeyBtn" onclick="deleteMcpApiKey()">
-                            <i class="mdi mdi-key-remove"></i> API 키 삭제
+                        <button class="btn btn-sm btn-wiki" id="generateMcpApiKeyBtn" onclick="generateMcpApiKey()" disabled>
+                            <i class="mdi mdi-key-plus" aria-hidden="true"></i> API 키 추가
                         </button>
                     </div>
 

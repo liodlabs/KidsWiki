@@ -113,10 +113,10 @@ export async function resolveBearerAuth(
                      WHERE k.key_hash = ?`
                 )
                 .bind(tokenHash)
-                .first<BearerUserRow & { expires_at: number }>();
+                .first<BearerUserRow & { expires_at: number | null }>();
 
             if (row) {
-                if (row.expires_at < now) return { kind: 'error', message: 'Token expired' };
+                if (row.expires_at !== null && row.expires_at <= now) return { kind: 'error', message: 'Token expired' };
                 userRow = row;
                 scope = 'mcp admin-mcp';
             } else {

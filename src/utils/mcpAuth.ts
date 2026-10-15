@@ -82,13 +82,13 @@ export async function resolveBearerAuth(c: Context<Env>): Promise<BearerAuthResu
                 )
                 .bind(tokenHash)
                 .first<{
-                    user_id: string; expires_at: number;
+                    user_id: string; expires_at: number | null;
                     uid: string; provider: string; provider_uid: string; email: string | null; name: string; picture: string | null; picture_private: number; mcp_instant_apply: number;
                     role: string; banned_until: number | null; last_namechange: number | null; created_at: number;
                 }>();
 
             if (row) {
-                if (row.expires_at < now) return { kind: 'error', response: mcpUnauthorized(c, 'Token expired') };
+                if (row.expires_at !== null && row.expires_at <= now) return { kind: 'error', response: mcpUnauthorized(c, 'Token expired') };
                 userRow = row;
                 scope = 'mcp admin-mcp';
             } else {

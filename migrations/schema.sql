@@ -721,15 +721,17 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON oauth_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_refresh ON oauth_tokens(refresh_token_hash);
 
--- MCP API 키 테이블
+-- MCP API 키. expires_at이 NULL이면 무기한이다.
 CREATE TABLE IF NOT EXISTS mcp_api_keys (
-  user_id     TEXT PRIMARY KEY,
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
   key_hash    TEXT NOT NULL UNIQUE,  -- SHA-256 hex
-  masked_key  TEXT NOT NULL,         -- UI 노출용 (예: "mcp_abc...xyz")
+  masked_key  TEXT NOT NULL,
   created_at  INTEGER DEFAULT (unixepoch()),
-  expires_at  INTEGER NOT NULL,      -- unixepoch() + 30 * 86400
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  expires_at  INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_mcp_api_keys_user ON mcp_api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_mcp_api_keys_expires ON mcp_api_keys(expires_at);
 
 -- 계정별 수동 편집 초안. 공개 문서 검색/리비전에 포함되지 않는다.
