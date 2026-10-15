@@ -16,7 +16,7 @@
 //     deleteDirectMessage / revokeSession / viewSentMessage)는 파일 끝에서 window.* 로 노출한다.
 
 import { renderUserAvatar } from '../utils/avatar';
-import type { EditorDraftSummary } from '../../shared/editorDraft';
+import type { EditorDraft, EditorDraftSummary } from '../../shared/editorDraft';
 
         document.addEventListener('DOMContentLoaded', async () => {
             await Promise.all([window.loadConfig(), window.checkAuth()]);
@@ -723,7 +723,9 @@ import type { EditorDraftSummary } from '../../shared/editorDraft';
                             <div class="small text-muted">${window.escapeHtml(scope)}</div>
                             <time class="small text-muted" datetime="${savedAt.toISOString()}">저장: ${savedAt.toLocaleString('ko-KR')}</time>
                         </div>
-                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                        <div class="d-flex align-items-center flex-wrap gap-2 flex-shrink-0">
+                            <button type="button" class="btn btn-sm btn-wiki-outline" data-draft-preview-index="${index}"
+                                aria-label="${window.escapeHtml(draft.slug)} ${window.escapeHtml(scope)} 초안 미리보기">미리보기</button>
                             <a class="btn btn-sm btn-wiki-outline" href="/edit?${window.escapeHtml(params.toString())}"
                                 aria-label="${window.escapeHtml(draft.slug)} ${window.escapeHtml(scope)} 초안 불러오기">불러오기</a>
                             <button type="button" class="btn btn-sm btn-outline-danger" data-draft-index="${index}"
@@ -734,6 +736,9 @@ import type { EditorDraftSummary } from '../../shared/editorDraft';
                 list.querySelectorAll('[data-draft-index]').forEach(button => {
                     button.addEventListener('click', () => deleteEditorDraft(drafts[Number(button.dataset.draftIndex)]));
                 });
+                list.querySelectorAll('[data-draft-preview-index]').forEach(button => {
+                    button.addEventListener('click', () => previewEditorDraft(drafts[Number(button.dataset.draftPreviewIndex)]));
+                });
             } catch {
                 count.textContent = '—';
                 list.innerHTML = '<p class="text-danger py-3 mb-0">초안을 불러오지 못했습니다. 새로고침을 눌러 다시 시도해주세요.</p>';
@@ -741,6 +746,69 @@ import type { EditorDraftSummary } from '../../shared/editorDraft';
                 refresh.disabled = false;
                 list.removeAttribute('aria-busy');
             }
+        }
+
+        async function previewEditorDraft(draft: EditorDraftSummary) {
+            const controller = new AbortController();
+            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+            // 닫은 창의 비동기 렌더가 다음 초안 미리보기에 섞이지 않게 한다.
+            const id = 'draft-preview-' + crypto.randomUUID();
+            await Swal.fire({
+                title: '초안 미리보기', width: '1000px', customClass: { popup: 'editor-draft-preview' },
+                showCloseButton: true, closeButtonAriaLabel: '미리보기 닫기', confirmButtonText: '닫기',
+                html: `<div class="fw-semibold text-break mb-2">${window.escapeHtml(draft.slug)}</div>
+                    <p id="${id}-status" class="small text-muted" role="status">초안을 불러오는 중...</p>
+                    <div id="${id}" class="wiki-content" aria-busy="true"></div>`,
+                willClose: () => {
+                    controller.abort();
+                    window.clearWikiContentTimers?.(id);
+                },
+                didOpen: async () => {
+                    const body = document.getElementById(id);
+                    const status = document.getElementById(id + '-status');
+                    if (!body || !status) return;
+                    try {
+                        const [res, paletteData] = await Promise.all([
+                            fetch('/api/editor-drafts/' + encodeURIComponent(draft.key), { cache: 'no-store', signal }),
+                            fetch('/api/palettes', { signal }).then(r => r.ok ? r.json() : null).catch(() => null),
+                        ]);
+                        if (!res.ok) throw new Error(res.status === 404
+                            ? '초안이 삭제되었거나 더 이상 존재하지 않습니다. 목록을 새로고침해주세요.'
+                            : '초안을 불러오지 못했습니다. 창을 닫고 다시 시도해주세요.');
+                        const { draft: latest }: { draft: EditorDraft } = await res.json();
+                        if (controller.signal.aborted || !body.isConnected) return;
+                        if (signal.aborted) throw signal.reason;
+                        const scope = latest.payload.sectionIndex === undefined ? '문서 전체'
+                            : `섹션: ${latest.payload.sectionHeading || (latest.payload.sectionIndex + 1) + '번째 섹션'}`;
+                        status.textContent = `${scope} · 저장: ${new Date(latest.payload.savedAt ?? draft.updatedAt).toLocaleString('ko-KR')}`;
+                        const raw = !window.renderWikiContent || !window.marked || !window.DOMPurify
+                            || (window.appConfig?.enabledExtensions || []).some(ext => draft.slug.startsWith(ext + ':'));
+                        if (raw) {
+                            body.textContent = latest.payload.content;
+                            body.classList.add('editor-draft-preview-raw');
+                            status.textContent += ' · 원문 표시';
+                        } else {
+                            await Promise.race([
+                                window.renderWikiContent(latest.payload.content, draft.slug, id, {
+                                    palettes: paletteData?.palettes, hideSectionLinkCopy: true,
+                                }).finally(() => {
+                                    if (signal.aborted || !body.isConnected) window.clearWikiContentTimers?.(id);
+                                }),
+                                new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })),
+                            ]);
+                        }
+                    } catch (error) {
+                        if (controller.signal.aborted || !body.isConnected) return;
+                        body.remove(); // 렌더가 늦게 끝나도 오류 안내를 덮어쓰지 않도록 분리한다.
+                        status.classList.replace('text-muted', 'text-danger');
+                        status.textContent = signal.aborted ? '응답이 늦어 미리보기를 불러오지 못했습니다. 창을 닫고 다시 시도해주세요.'
+                            : error.message || '미리보기를 불러오지 못했습니다.';
+                    } finally {
+                        body.removeAttribute('aria-busy');
+                        if (signal.aborted) window.clearWikiContentTimers?.(id);
+                    }
+                },
+            });
         }
 
         async function deleteEditorDraft(draft: EditorDraftSummary) {
