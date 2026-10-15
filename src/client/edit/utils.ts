@@ -448,10 +448,13 @@ async function saveDraftToDatabase(): Promise<boolean> {
         button.setAttribute('aria-busy', 'true');
     }
     try {
-        await writeDraft(draftKey, payload);
+        let removedCount = 0;
+        await writeDraft(draftKey, payload, keys => { removedCount = keys.length; });
         consumeDraft(draftKey);
-        void window.Swal?.fire({ icon: 'success', title: '초안 저장됨', text: '내 계정에 저장했습니다. 다른 기기에서도 불러올 수 있습니다.',
-            toast: true, position: 'top-end', timer: 1800, showConfirmButton: false });
+        void window.Swal?.fire({ icon: 'success', title: '초안 저장됨', text: removedCount
+            ? `내 계정에 저장했습니다. 오래된 초안 ${removedCount}개를 자동 삭제했습니다.`
+            : '내 계정에 저장했습니다. 다른 기기에서도 불러올 수 있습니다.',
+            toast: true, position: 'top-end', timer: removedCount ? 5000 : 1800, showConfirmButton: false });
         return true;
     } catch (error) { showDraftError(error); return false; }
     finally {

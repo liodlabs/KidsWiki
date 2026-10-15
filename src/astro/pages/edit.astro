@@ -432,6 +432,7 @@ const ssrJson = JSON.stringify({ _wikiSyntax: branding.wikiSyntax })
                 <button class="btn btn-wiki-outline" onclick="cancelEdit()">
                     <i class="mdi mdi-close"></i> 취소
                 </button>
+                <small id="draftLimitNotice" class="text-muted w-100" hidden></small>
                 <div class="ms-2 d-flex align-items-center gap-2">
                     <div id="turnstile-container"></div>
                     <button type="button" id="turnstileRefreshBtn" class="btn btn-sm btn-outline-secondary"

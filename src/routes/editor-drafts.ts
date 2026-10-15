@@ -1,12 +1,27 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import type { Env } from '../types';
-import type { DraftPayload } from '../shared/editorDraft';
+import type { DraftPayload, EditorDraftSummary } from '../shared/editorDraft';
+import { STANDARD_EDITOR_DRAFT_LIMIT } from '../shared/editorDraft';
 import { requireAuth, requirePermission } from '../middleware/session';
 import { ensureEditorDraftSchema } from '../utils/editorDrafts';
+import { isSuperAdmin } from '../utils/auth';
 
 const routes = new Hono<Env>();
 const MAX_BYTES = 1_500_000; // 본문 + 병합 기준본. D1의 행 크기 제한보다 작게 유지한다.
 const conflict = '초안이 다른 기기에서 변경되었습니다. 페이지를 다시 열어 확인한 뒤 저장해주세요.';
+
+async function draftLimit(c: Context<Env>): Promise<number | null> {
+    // 오래된 세션 역할 때문에 승격된 관리자의 초안을 지우지 않는다.
+    const user = await c.env.DB.prepare('SELECT role, email, banned_until FROM users WHERE id = ?')
+        .bind(c.get('user')!.id).first<{ role: string; email: string | null; banned_until: number | null }>();
+    if (!user || user.role === 'deleted') return 0;
+    if (isSuperAdmin(user.email, c.env)) return null;
+    if (user.banned_until && user.banned_until > Math.floor(Date.now() / 1000)) return 0;
+    const role = user.role === 'banned' ? 'user' : user.role;
+    if (role === 'admin' || role === 'super_admin') return null;
+    return role === 'user' || role === 'discussion_manager' ? STANDARD_EDITOR_DRAFT_LIMIT : 0;
+}
 
 routes.use('/editor-drafts', async (c, next) => { c.header('Cache-Control', 'no-store'); await next(); });
 routes.use('/editor-drafts/*', async (c, next) => { c.header('Cache-Control', 'no-store'); await next(); });
@@ -34,6 +49,30 @@ routes.get('/editor-drafts', requireAuth, async c => {
         WHERE user_id = ? AND substr(draft_key, 1, length(?)) = ? ORDER BY draft_key`)
         .bind(c.get('user')!.id, prefix, prefix).all<{ key: string; revision: string }>();
     return c.json({ drafts: rows.results });
+});
+
+routes.get('/editor-drafts/overview', requireAuth, requirePermission('wiki:read'), async c => {
+    const limit = await draftLimit(c);
+    if (limit === 0) return c.json({ error: '초안을 조회할 권한이 없습니다.' }, 403);
+    await ensureEditorDraftSchema(c.env.DB);
+    const { results } = await c.env.DB.prepare(`SELECT draft_key AS key, revision, updated_at AS updatedAt,
+        json_extract(payload, '$.sectionIndex') AS sectionIndex,
+        json_extract(payload, '$.sectionHeading') AS sectionHeading
+        FROM editor_drafts WHERE user_id = ? ORDER BY updated_at DESC, draft_key`)
+        .bind(c.get('user')!.id).all<{
+            key: string; revision: string; updatedAt: number; sectionIndex: number | null; sectionHeading: string | null;
+        }>();
+    const drafts: EditorDraftSummary[] = results.map(row => {
+        const draft: EditorDraftSummary = { key: row.key, revision: row.revision,
+            slug: row.key.slice('wiki_draft_'.length), updatedAt: row.updatedAt };
+        if (row.sectionIndex !== null && draft.slug.endsWith('#section=' + row.sectionIndex)) {
+            draft.slug = draft.slug.slice(0, -('#section=' + row.sectionIndex).length);
+            draft.sectionIndex = row.sectionIndex;
+            draft.sectionHeading = row.sectionHeading ?? '';
+        }
+        return draft;
+    });
+    return c.json({ drafts, limit });
 });
 
 routes.get('/editor-drafts/:key', requireAuth, async c => {
@@ -64,6 +103,8 @@ routes.put('/editor-drafts/:key', requireAuth, requirePermission('wiki:edit'), a
     if (p.sectionHeading !== undefined) payload.sectionHeading = p.sectionHeading;
     const revision = crypto.randomUUID();
     const userId = c.get('user')!.id;
+    const limit = await draftLimit(c);
+    if (limit === 0) return c.json({ error: '초안을 저장할 권한이 없습니다.' }, 403);
     await ensureEditorDraftSchema(c.env.DB);
     const statement = body.expectedRevision === null
         ? c.env.DB.prepare(`INSERT INTO editor_drafts (user_id, draft_key, payload, revision, updated_at)
@@ -72,8 +113,23 @@ routes.put('/editor-drafts/:key', requireAuth, requirePermission('wiki:edit'), a
         : c.env.DB.prepare(`UPDATE editor_drafts SET payload = ?, revision = ?, updated_at = ?
             WHERE user_id = ? AND draft_key = ? AND revision = ? RETURNING revision`)
             .bind(JSON.stringify(payload), revision, savedAt, userId, key, body.expectedRevision);
-    if (!await statement.first()) return c.json({ error: conflict }, 409);
-    return c.json({ draft: { key, revision, payload } });
+    let removedKeys: string[] = [];
+    if (body.expectedRevision === null && limit !== null) {
+        // 새 초안 생성에 성공한 경우에만 정리한다. 저장·정리는 함께 성공하거나 함께 롤백된다.
+        const [saved, removed] = await c.env.DB.batch<{ draft_key: string }>([
+            statement,
+            c.env.DB.prepare(`DELETE FROM editor_drafts WHERE user_id = ? AND draft_key IN (
+                SELECT draft_key FROM editor_drafts WHERE user_id = ? AND draft_key != ?
+                ORDER BY updated_at DESC, draft_key DESC LIMIT -1 OFFSET ?
+            ) AND EXISTS (
+                SELECT 1 FROM editor_drafts WHERE user_id = ? AND draft_key = ? AND revision = ?
+            ) RETURNING draft_key`)
+                .bind(userId, userId, key, limit - 1, userId, key, revision),
+        ]);
+        if (!saved.results.length) return c.json({ error: conflict }, 409);
+        removedKeys = removed.results.map(row => row.draft_key as string);
+    } else if (!await statement.first()) return c.json({ error: conflict }, 409);
+    return c.json({ draft: { key, revision, payload }, removedKeys });
 });
 
 routes.delete('/editor-drafts/:key', requireAuth, async c => {
