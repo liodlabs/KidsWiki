@@ -4479,6 +4479,14 @@ function _parseTemporalBoundary(raw) {
 // containerId → 예약된 전환 타이머 id 배열 (중복/누수 방지). setInterval 대신 경계까지
 // 정확히 한 번 setTimeout 으로 전환한다.
 const _temporalTimeoutMap = {};
+
+/** 닫힌 미리보기 등에서 분리된 본문의 예약 작업을 해제한다. */
+function clearWikiContentTimers(containerId) {
+    clearInterval(_timerIntervalMap[containerId]);
+    delete _timerIntervalMap[containerId];
+    (_temporalTimeoutMap[containerId] || []).forEach(id => clearTimeout(id));
+    delete _temporalTimeoutMap[containerId];
+}
 // setTimeout 지연은 부호 있는 32비트라 ~24.85일(2^31-1 ms) 초과 시 즉시 발동하는
 // 버그가 있다. 그보다 먼 경계는 타이머를 걸지 않고(초기 상태는 이미 정확) 다음 로드에서
 // 재계산하도록 둔다. 안전 여유를 두고 24일로 상한.
@@ -7201,6 +7209,7 @@ window._processTimestampsInHtml = _processTimestampsInHtml;
 window._syncTemporalDerivedVisibility = _syncTemporalDerivedVisibility;
 window.protectWikiLinks = protectWikiLinks;
 window.restoreWikiLinks = restoreWikiLinks;
+window.clearWikiContentTimers = clearWikiContentTimers;
 window.renderWikiContent = renderWikiContent;
 // 렌더 컨텍스트 주입(워크스페이스 등). 미호출 시 메인 위키 기본값 유지.
 window.configureWikiRender = (opts) => {
