@@ -215,7 +215,7 @@ export const USER_EDIT_TOOL_DEFS: McpToolDef[] = [
             properties: {
                 title: { type: 'string', description: '문서 슬러그 (호출/식별자)' },
                 content: { type: 'string', description: '문서 전체 본문 (마크다운/위키 문법)' },
-                category: { type: 'string', description: '쉼표로 구분된 카테고리 (선택, 한글/영숫자/공백/쉼표만 허용)' },
+                category: { type: 'string', description: '쉼표로 구분된 카테고리 (선택, 한글/영숫자/공백/쉼표와 ~, · 허용)' },
                 redirect_to: { type: 'string', description: '리다이렉트 대상 슬러그 (선택)' },
                 create_only: { type: 'boolean', description: 'true 시 슬러그가 이미 존재하면 오류 반환 (기본 false)' },
                 display_title: { type: ['string', 'null'], description: '표시 전용 대체 제목 (선택). 슬러그와 달리 모든 특수문자 허용. null/빈 문자열이면 제거. 호출 매칭에는 사용되지 않으며 위키 링크/트랜스클루전/MCP 인자는 항상 슬러그(title 파라미터)를 사용합니다.' },
@@ -382,7 +382,7 @@ export const ADMIN_ONLY_EDIT_TOOL_DEFS: McpToolDef[] = [
     },
     {
         name: 'set_page_status',
-        description: '문서 본문은 건드리지 않고 카테고리만 변경합니다 (즉시 적용 — draft 모델 미사용, 새 리비전 생성 없음). 본문을 읽거나 수정할 필요 없이 메타데이터만 갱신할 때 사용합니다.\n\n- category: 쉼표로 구분된 카테고리 (한글/영숫자/공백/쉼표만 허용). 빈 문자열을 보내면 모든 카테고리가 제거됩니다.\n\n변경은 admin_log 에 기록되지만 리비전 이력에는 남지 않습니다 (편집 요약/저자 등록 없음).\n\n비공개 설정·편집 잠금/관리자 전용 ACL 은 별도 API 또는 권한 관리 모달에서 설정합니다.',
+        description: '문서 본문은 건드리지 않고 카테고리만 변경합니다 (즉시 적용 — draft 모델 미사용, 새 리비전 생성 없음). 본문을 읽거나 수정할 필요 없이 메타데이터만 갱신할 때 사용합니다.\n\n- category: 쉼표로 구분된 카테고리 (한글/영숫자/공백/쉼표와 ~, · 허용). 빈 문자열을 보내면 모든 카테고리가 제거됩니다.\n\n변경은 admin_log 에 기록되지만 리비전 이력에는 남지 않습니다 (편집 요약/저자 등록 없음).\n\n비공개 설정·편집 잠금/관리자 전용 ACL 은 별도 API 또는 권한 관리 모달에서 설정합니다.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -1032,8 +1032,8 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
         if (slug.startsWith('이미지:')) return asTextResult('Error: "이미지:" 네임스페이스는 admin-mcp 로 편집할 수 없습니다 (이미지 문서 전용).', true);
         if (slug.startsWith('map:')) return asTextResult('Error: "map:" 네임스페이스는 가상 트리 뷰 전용이므로 편집할 수 없습니다.', true);        if (typeof args.content !== 'string') return asTextResult('Error: content 는 문자열이어야 합니다.', true);
         if (args.category && typeof args.category === 'string') {
-            if (!/^[가-힣a-zA-Z0-9\s,]+$/.test(args.category)) {
-                return asTextResult('Error: category 에는 특수문자를 사용할 수 없습니다.', true);
+            if (!/^[가-힣a-zA-Z0-9\s,~·]+$/.test(args.category)) {
+                return asTextResult('Error: category 에 사용할 수 없는 문자가 포함되어 있습니다.', true);
             }
         }
 
@@ -2184,8 +2184,8 @@ export async function dispatchAdminEditTool(c: Context<Env>, user: User, toolNam
 
         const trimmedCategory = (args.category as string).trim();
         const newCategory = trimmedCategory ? trimmedCategory : null;
-        if (newCategory && !/^[가-힣a-zA-Z0-9\s,]+$/.test(newCategory)) {
-            return asTextResult('Error: category 에는 특수문자를 사용할 수 없습니다.', true);
+        if (newCategory && !/^[가-힣a-zA-Z0-9\s,~·]+$/.test(newCategory)) {
+            return asTextResult('Error: category 에 사용할 수 없는 문자가 포함되어 있습니다.', true);
         }
 
         const page = await db
