@@ -1,6 +1,6 @@
 export const STANDARD_EDITOR_DRAFT_LIMIT = 4;
 
-/** 개인 계정에 보관하는 수동 편집 초안. 공개 문서/MCP 제출안과 별개다. */
+/** 브라우저·API·MCP가 공유하는 개인 편집 초안. 공개 문서/MCP 제출안과 별개다. */
 export interface DraftPayload {
     content: string;
     version: number | string | null;
