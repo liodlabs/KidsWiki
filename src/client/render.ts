@@ -39,6 +39,51 @@ function initMarkedConfig() {
     marked.use({
         extensions: [
             {
+                // Markdown 각주 정의는 lexer별로 보관해 뒤에 나온 정의와 재참조도 연결한다.
+                name: 'markdownFootnoteDefinition',
+                level: 'block',
+                start(src) { return src.match(/^ {0,3}\[\^[^\]\s]+\]:/m)?.index; },
+                tokenizer(src) {
+                    const m = /^ {0,3}\[\^([^\]\s]+)\]:[ \t]*([^\n]*)(?:\n|$)/.exec(src);
+                    if (!m) return;
+                    let raw = m[0], text = m[2];
+                    let continuation;
+                    while ((continuation = /^(?:[ \t]*\n)*(?: {4}|\t)([^\n]*)(?:\n|$)/.exec(src.slice(raw.length)))) {
+                        raw += continuation[0];
+                        text += '\n' + continuation[1];
+                    }
+                    const notes = this.lexer.tokens.wikiMarkdownFootnotes ||= new Map();
+                    const token = { type: 'markdownFootnoteDefinition', raw, tokens: [] };
+                    if (!notes.has(m[1])) notes.set(m[1], token);
+                    this.lexer.inline(text, token.tokens);
+                    return token;
+                },
+                childTokens: ['tokens'],
+                renderer() { return ''; }
+            },
+            {
+                name: 'markdownFootnoteReference',
+                level: 'inline',
+                start(src) { return src.indexOf('[^'); },
+                tokenizer(src) {
+                    const m = /^\[\^([^\]\s]+)\](?!\()/.exec(src);
+                    if (!m) return;
+                    const note = this.lexer.tokens.wikiMarkdownFootnotes?.get(m[1]);
+                    if (!note) return;
+                    return { type: 'markdownFootnoteReference', raw: m[0], fnName: m[1], note };
+                },
+                renderer(token) {
+                    const note = token.note;
+                    // 각주 안의 자기 참조·순환 참조는 평문으로 남겨 재귀 렌더를 막는다.
+                    if (note.rendering) return escapeHtml(token.raw);
+                    note.rendering = true;
+                    let html;
+                    try { html = this.parser.parseInline(note.tokens); }
+                    finally { note.rendering = false; }
+                    return `<sup class="wiki-fn-marker" data-fn-name="md:${escapeHtml(token.fnName)}" data-fn-html="${escapeHtml(html)}"></sup>`;
+                }
+            },
+            {
                 name: 'highlight',
                 level: 'inline',
                 // ==text== 의 시작이 어디 있는지를 찾되, 선행 스타일 토큰
@@ -5151,7 +5196,17 @@ async function renderWikiContent(content, slug, containerId, options = {}) {
         // 줄 시작의 공백/탭을 NBSP(U+00A0)로 치환해 들여쓰기 보존 (트리 구조 등).
         // 마크다운 블록 마커(리스트/인용/제목/표)로 시작하는 줄은 마크다운 의미를 위해 그대로 둠.
         // 코드 블록은 이미 WIKICODEFPH 로 보호되어 있어 영향받지 않는다.
+        let inMarkdownFootnote = false;
         foldInput = foldInput.split('\n').map(line => {
+            if (/^ {0,3}\[\^[^\]\s]+\]:/.test(line)) {
+                inMarkdownFootnote = true;
+                return line;
+            }
+            // 각주 설명의 들여쓰기는 다음 줄을 같은 정의로 묶는 문법이다.
+            if (inMarkdownFootnote) {
+                if (!line.trim() || /^(?: {4}|\t)/.test(line)) return line;
+                inMarkdownFootnote = false;
+            }
             const m = /^([ \t]+)(\S.*)$/.exec(line);
             if (!m) return line;
             const ws = m[1];

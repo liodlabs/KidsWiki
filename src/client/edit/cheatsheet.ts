@@ -85,6 +85,7 @@ const CATALOG: CheatSection[] = [
             { label: '분기 #switch', desc: '값별 분기', keywords: 'switch 분기 parser', syntax: '{{#switch:값|키=결과|#default=기본}}', insert: `{{#switch:${CARET}|키=결과|#default=기본}}` },
             { label: '산술 #expr', desc: '사칙연산', keywords: 'expr 계산 산술 parser', syntax: '{{#expr:1 + 2}}', insert: `{{#expr:${CARET}}}` },
             { label: '각주', desc: '이름 있는 각주 정의', keywords: 'footnote 각주 주석', syntax: '[*이름 내용]', insert: `[*${CARET} 내용]` },
+            { label: '마크다운 각주', desc: '본문 참조와 각주 설명', keywords: 'markdown footnote 각주 주석', syntax: '[^1] · [^1]: 설명', insert: `[^${CARET}1]\n\n[^1]: 각주 내용` },
         ],
     },
     {
