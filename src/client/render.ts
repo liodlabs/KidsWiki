@@ -384,6 +384,18 @@ function initMarkedConfig() {
                 }
             }
         ],
+        tokenizer: {
+            del(src, maskedSrc, prevChar = '') {
+                // 단일 ~는 단어 사이의 범위 표기와 구분하고, ~~는 기존 문법을 유지한다.
+                if (src.startsWith('~~')) return false;
+                if (prevChar && !/[\s\p{P}]/u.test(prevChar)) return;
+                const token = marked.Tokenizer.prototype.del.call(this, src, maskedSrc, prevChar);
+                if (!token || /^\s|\s$/u.test(token.text)) return;
+                const nextChar = src.charAt(token.raw.length);
+                if (nextChar && !/[\s\p{P}]/u.test(nextChar)) return;
+                return token;
+            }
+        },
         renderer: {
             html(token) {
                 const htmlStr = typeof token === 'string' ? token : (token.text || token.raw || '');

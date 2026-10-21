@@ -22,6 +22,12 @@ Cloudflare 프리티어만으로 돌아가는 서버리스 위키입니다. 마�
 | 언어 | TypeScript |
 | 프런트엔드 | Bootstrap 5 & Bootstrap Icons, Material Design Icons, Astro, Marked.js, DOMPurify, CodeMirror 6, PrismJS, jsdiff, SweetAlert2, Chart.js |
 
+## 취소선 문법
+
+`~~내용~~`은 기존대로 취소선으로 표시합니다. 단일 `~내용~`은 바깥쪽이 공백·문장부호·문장 시작/끝이고 안쪽 양 끝은 글자에 붙어 있을 때만 취소선으로 표시합니다. `여기서~부터~끝까지`, `여기서 ~ 부터 ~ 끝까지`, `2235~2635파운드, 10~20kg`, `~ 내용 ~`은 일반 글자로 남깁니다. 본문·미리보기와 공유 렌더러에 같은 규칙을 적용합니다.
+
+검증: `node --test scripts/markdown-strikethrough.test.mjs scripts/markdown-footnotes.test.mjs`
+
 ## 시작하기
 
 1. Cloudflare에서 D1 · R2 · KV를 생성합니다.
