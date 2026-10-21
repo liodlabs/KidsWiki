@@ -64,7 +64,7 @@ Cloudflare 프리티어만으로 돌아가는 서버리스 위키입니다. 마�
 
 ### API 토큰으로 내 초안 사용
 
-마이페이지에서 발급한 API 키를 `Authorization: Bearer <API 키>`로 보내면 같은 계정의 **내 초안**을 저장·조회·수정·삭제할 수 있습니다. API와 브라우저가 같은 초안을 사용하므로 일반 유저·토론 관리자의 4개 보관 한도도 합산합니다. 토큰을 명시하면 쿠키보다 토큰 소유자를 우선하며, 만료·폐기·차단·탈퇴한 토큰은 거부합니다. 이 인증은 개인 초안 API와 MCP 제출안 API에서 지원하며 다른 계정 관리 API에는 적용되지 않습니다.
+마이페이지에서 발급한 API 키를 `Authorization: Bearer <API 키>`로 보내면 같은 계정의 **내 초안**을 저장·조회·수정·삭제할 수 있습니다. API와 브라우저가 같은 초안을 사용하므로 일반 유저·토론 관리자의 4개 보관 한도도 합산합니다. 토큰을 명시하면 쿠키보다 토큰 소유자를 우선하며, 만료·폐기·차단·탈퇴한 토큰은 거부합니다. 이 인증은 개인 초안 API와 MCP 제출안 API, 이미지 업로드 API에서 지원하며 다른 계정 관리 API에는 적용되지 않습니다.
 
 | 요청 | 동작 |
 | --- | --- |
@@ -91,6 +91,24 @@ Cloudflare 프리티어만으로 돌아가는 서버리스 위키입니다. 마�
 MCP에서도 `save_personal_draft`, `list_personal_drafts`, `read_personal_draft`, `delete_personal_draft` 도구로 같은 초안을 다룹니다. 저장 도구는 `title`, `content`, `base_version`, `base_content`, `expected_revision`을 받으며 선택적으로 `section_index`·`section_heading`을 지정합니다. 본문 읽기는 목록에서 받은 `key`를 사용합니다. 삭제 도구는 읽기 응답의 `key`와 `revision`을 각각 `key`, `expected_revision`으로 받으며, 다른 기기에서 수정된 초안은 충돌로 거부합니다. 이미 삭제된 초안은 성공으로 처리하고, 타인의 초안에는 영향을 주지 않습니다. 일반 기여자도 개인 초안을 저장·삭제할 수 있지만 직접 게시 권한은 달라지지 않습니다. 기존 `create_or_update_page`·`list_drafts`는 승인용 MCP 편집안을 계속 다루며 개인 초안과 섞지 않습니다. MCP 도구는 `MCP_MODE`가 활성화된 경우에만 제공됩니다.
 
 연결 검증: `node --test scripts/personal-drafts-api.test.mjs`. 추가 DB 마이그레이션은 없습니다.
+
+## 이미지 업로드 API·MCP
+
+기존 웹 업로드와 같은 `POST /api/media`에 API 키 또는 MCP OAuth 액세스 토큰을 `Authorization: Bearer <토큰>`으로 보내 이미지를 업로드할 수 있습니다. 브라우저 로그인 쿠키도 계속 지원하며, 토큰을 명시하면 토큰 소유자로 처리하고 잘못된 토큰을 쿠키로 대신 인증하지 않습니다. `media:upload` 권한이 필요하며 일반 기여자도 사용할 수 있습니다. 쿠키 업로드의 CSRF 검증은 유지합니다.
+
+```sh
+curl https://<위키 도메인>/api/media \
+  -H "Authorization: Bearer $WIKI_API_KEY" \
+  -F 'file=@./cat.png;type=image/png' \
+  -F 'filename=고양이' \
+  -F 'tags=["동물","고양이"]'
+```
+
+필수 필드는 `file`과 확장자 없는 `filename`이며 `tags`는 선택 사항입니다. 성공하면 `url`, `r2_key`, 확장자를 포함한 최종 `filename`, 정제된 `tags`를 반환합니다. 같은 이름은 `고양이-2.png`처럼 숫자를 붙여 저장합니다. 업로드한 이미지는 공개됩니다.
+
+MCP에서는 `upload_image`에 `filename`, `mime_type`, 파일 원본의 Base64 문자열인 `data`, 선택 사항인 문자열 배열 `tags`를 보냅니다. `data:` URL 접두사는 제외합니다. JPEG·PNG·GIF·WebP·SVG를 허용하고, 기본 10MB(`MAX_UPLOAD_SIZE`로 조정) 크기 제한·파일명 검증·SVG 보안 검증을 웹과 공유합니다. 문서 즉시 적용 설정과 별개이며, 문서 본문에 이미지를 삽입하려면 반환된 `url`을 사용하세요. MCP가 활성화되어 있어야 도구가 제공되며, 목록이 캐시된 클라이언트는 재연결해 갱신합니다.
+
+검증: `node --test scripts/media-upload-api.test.mjs`
 
 ## MCP 제출안 조회·발행 승인 API
 

@@ -54,6 +54,8 @@ app.use('*', (c, next) => {
     const path = c.req.path;
     if (path === '/api/mcp' || path.startsWith('/api/mcp/')) return next();
     if (path === '/oauth/token' || path === '/oauth/register' || path === '/oauth/revoke') return next();
+    // 토큰 업로드는 라우트에서 인증한다. 쿠키 업로드에는 기존 CSRF 검증을 유지한다.
+    if (path === '/api/media' && c.req.method === 'POST' && c.req.header('Authorization') !== undefined) return next();
     return csrf()(c, next);
 });
 

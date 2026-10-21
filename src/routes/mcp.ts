@@ -27,6 +27,7 @@ import { isTrustedContributor } from '../utils/contributorTrust';
 import { PERSONAL_DRAFT_READ_TOOLS, PERSONAL_DRAFT_WRITE_TOOLS, dispatchPersonalDraftTool } from './mcp-editor-drafts';
 import { SUBMISSION_TOOLS, dispatchSubmissionTool } from './mcp-submission-tools';
 import { PUBLISHED_PAGE_TOOL, dispatchPublishedPagesTool } from './content-workflow';
+import { UPLOAD_IMAGE_TOOL, dispatchUploadImageTool } from './mcp-media';
 
 const mcpRoutes = new Hono<Env>();
 
@@ -149,6 +150,7 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
         ...sharedToolDefs,
         ...(user && rbac.can(role, 'wiki:read') ? [...PERSONAL_DRAFT_READ_TOOLS, PUBLISHED_PAGE_TOOL] : []),
         ...(user && rbac.can(role, 'wiki:edit') ? PERSONAL_DRAFT_WRITE_TOOLS : []),
+        ...(user && rbac.can(role, 'media:upload') ? [UPLOAD_IMAGE_TOOL] : []),
         ...(canEdit ? getUserToolDefs(canInstantApply) : []),
         ...(isAdmin ? ADMIN_ONLY_TOOL_DEFS : []),
     ];
@@ -219,6 +221,9 @@ async function handleJsonRpc(c: Context<Env>, body: any, user: User | null) {
             if (shared) return { jsonrpc: '2.0', id, result: shared };
 
             if (user) {
+                if (toolName === 'upload_image') {
+                    return { jsonrpc: '2.0', id, result: await dispatchUploadImageTool(c, args) };
+                }
                 const personalDraft = await dispatchPersonalDraftTool(c, toolName, args);
                 if (personalDraft) return { jsonrpc: '2.0', id, result: personalDraft };
 
