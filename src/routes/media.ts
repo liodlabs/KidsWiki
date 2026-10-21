@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Env } from '../types';
 import { requireAuth, requirePermission } from '../middleware/session';
 import { fetchMediaTagMap, replaceMediaTags, sanitizeTags } from '../utils/mediaTags';
@@ -7,11 +7,12 @@ import { safeJSON } from '../utils/json';
 import { invalidatePageCache } from '../utils/cacheInvalidation';
 import { sqlContains } from '../utils/sqlText';
 import { isTrustedContributor } from '../utils/contributorTrust';
+import { authenticateApiToken } from '../middleware/apiToken';
 
 const media = new Hono<Env>();
 
 // 허용 MIME 타입 (이미지 전용 — 동영상 업로드는 더 이상 허용하지 않는다)
-const ALLOWED_TYPES = new Set([
+export const ALLOWED_TYPES = new Set([
     'image/jpeg',
     'image/png',
     'image/gif',
@@ -65,9 +66,7 @@ function validateUploadFilename(name: string): { ok: true; value: string } | { o
  * 이미지 업로드 (media:upload 권한 필요)
  * multipart/form-data, 필드명: file, filename (사용자 지정 파일명)
  */
-media.post('/api/media', requireAuth, requirePermission('media:upload'), async (c) => {
-    const user = c.get('user')!;
-
+media.post('/api/media', authenticateApiToken, requireAuth, requirePermission('media:upload'), async (c) => {
     let formData: FormData;
     try {
         formData = await c.req.formData();
@@ -75,6 +74,11 @@ media.post('/api/media', requireAuth, requirePermission('media:upload'), async (
         return c.json({ error: '유효하지 않은 요청입니다.' }, 400);
     }
 
+    return uploadMedia(c, formData);
+});
+
+export async function uploadMedia(c: Context<Env>, formData: FormData) {
+    const user = c.get('user')!;
     const input = formData.get('file');
     if (!input || typeof input === 'string') {
         return c.json({ error: '파일이 없습니다.' }, 400);
@@ -82,7 +86,8 @@ media.post('/api/media', requireAuth, requirePermission('media:upload'), async (
     const file = input as unknown as File;
 
     // 사용자 지정 파일명 (문서 제목 슬러그와 동일한 금지 문자 규칙 적용)
-    const rawFilename = (formData.get('filename') as string | null) || '';
+    const filenameInput = formData.get('filename');
+    const rawFilename = typeof filenameInput === 'string' ? filenameInput : '';
     const validation = validateUploadFilename(rawFilename);
     if (!validation.ok) {
         return c.json({ error: validation.error }, 400);
@@ -169,7 +174,7 @@ media.post('/api/media', requireAuth, requirePermission('media:upload'), async (
     const publicUrl = `${c.env.MEDIA_PUBLIC_URL}/${r2Key}`;
 
     return c.json({ url: publicUrl, r2_key: r2Key, filename: dbFilename, tags });
-});
+}
 
 /**
  * GET /api/media/search
